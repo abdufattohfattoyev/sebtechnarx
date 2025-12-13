@@ -1,0 +1,11 @@
+# data/config.py
+from environs import Env
+
+env = Env()
+env.read_env()
+
+BOT_TOKEN = env.str("BOT_TOKEN")
+# ADMINS ni list sifatida olish — bu juda muhim!
+ADMINS = env.list("ADMINS", subcast=int)  # vergul bilan ajratilgan raqamlarni list qiladi
+IP = env.str("IP", "localhost")
+START_PHOTO_FILE_ID = "AgACAgIAAxkBAAIBLWf4h4IEdyTpw7JmOUBlBP0P2K8nAAJNzjEb0VeYSuyJ6qG8NtstAQADAgADeQADNgQ"
