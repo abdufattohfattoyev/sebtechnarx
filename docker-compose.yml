@@ -1,3 +1,6 @@
+# docker-compose.yml
+version: '3.8'
+
 services:
   bot:
     build:
@@ -7,8 +10,16 @@ services:
     environment:
       - BOT_TOKEN=${BOT_TOKEN}
     volumes:
-      - ./data:/app/data
+      - ./data:/app/data  # Host papkasiga bog'lash
+      - bot_data:/app/data  # Nusxaviy volume
     restart: unless-stopped
+    networks:
+      - bot_network
 
 volumes:
-  data:
+  bot_data:
+    driver: local
+
+networks:
+  bot_network:
+    driver: bridge

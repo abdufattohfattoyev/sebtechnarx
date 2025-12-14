@@ -27,10 +27,28 @@ def init_stats_tables():
             first_name TEXT,
             last_name TEXT,
             phone_number TEXT,
+            is_registered BOOLEAN DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+
+    # Eski bazalarga phone_number va is_registered ustunlarini qo'shish (migration)
+    try:
+        c.execute("SELECT phone_number FROM users LIMIT 1")
+    except sqlite3.OperationalError:
+        print("📞 phone_number ustuni qo'shilmoqda...")
+        c.execute("ALTER TABLE users ADD COLUMN phone_number TEXT")
+        conn.commit()
+        print("✅ phone_number ustuni qo'shildi!")
+
+    try:
+        c.execute("SELECT is_registered FROM users LIMIT 1")
+    except sqlite3.OperationalError:
+        print("✅ is_registered ustuni qo'shilmoqda...")
+        c.execute("ALTER TABLE users ADD COLUMN is_registered BOOLEAN DEFAULT 0")
+        conn.commit()
+        print("✅ is_registered ustuni qo'shildi!")
 
     # Narxlatish tarixi - har bir tugallangan narxlatish jarayoni
     c.execute('''
@@ -68,21 +86,31 @@ def add_or_update_user(user_id, username=None, first_name=None, last_name=None, 
 
     # Agar phone_number berilmagan bo'lsa, mavjud telefon raqamni saqlash
     if phone_number is None:
-        c.execute("SELECT phone_number FROM users WHERE user_id = ?", (user_id,))
-        row = c.fetchone()
-        if row:
-            phone_number = row['phone_number']
+        try:
+            c.execute("SELECT phone_number FROM users WHERE user_id = ?", (user_id,))
+            row = c.fetchone()
+            if row and row['phone_number']:
+                phone_number = row['phone_number']
+        except:
+            pass
+
+    # is_registered: agar phone_number bor bo'lsa True, aks holda False
+    is_registered = 1 if phone_number else 0
 
     c.execute("""
-        INSERT INTO users (user_id, username, first_name, last_name, phone_number, last_active)
-        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        INSERT INTO users (user_id, username, first_name, last_name, phone_number, is_registered, last_active)
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(user_id) DO UPDATE SET
             username = excluded.username,
             first_name = excluded.first_name,
             last_name = excluded.last_name,
             phone_number = COALESCE(excluded.phone_number, phone_number),
+            is_registered = CASE 
+                WHEN excluded.phone_number IS NOT NULL THEN 1 
+                ELSE is_registered 
+            END,
             last_active = CURRENT_TIMESTAMP
-    """, (user_id, username, first_name, last_name, phone_number))
+    """, (user_id, username, first_name, last_name, phone_number, is_registered))
 
     conn.commit()
 
@@ -92,6 +120,46 @@ def add_or_update_user(user_id, username=None, first_name=None, last_name=None, 
     conn.close()
 
     return dict(user_data) if user_data else None
+
+
+def register_user(user_id, phone_number):
+    """Foydalanuvchini ro'yxatdan o'tkazish"""
+    conn = get_conn()
+    c = conn.cursor()
+
+    c.execute("""
+        UPDATE users 
+        SET phone_number = ?, is_registered = 1, last_active = CURRENT_TIMESTAMP
+        WHERE user_id = ?
+    """, (phone_number, user_id))
+
+    conn.commit()
+
+    # Yangilangan ma'lumotni qaytarish
+    c.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+    user_data = c.fetchone()
+    conn.close()
+
+    return dict(user_data) if user_data else None
+
+
+def is_user_registered(user_id):
+    """Foydalanuvchi ro'yxatdan o'tganligini tekshirish"""
+    conn = get_conn()
+    c = conn.cursor()
+
+    try:
+        c.execute("SELECT phone_number, is_registered FROM users WHERE user_id = ?", (user_id,))
+        row = c.fetchone()
+        conn.close()
+
+        if row:
+            # Agar phone_number bor va is_registered True bo'lsa
+            return bool(row['phone_number']) and bool(row['is_registered'])
+        return False
+    except:
+        conn.close()
+        return False
 
 
 def get_user_by_telegram_id(user_id):
@@ -251,131 +319,6 @@ def get_global_stats(period='all'):
     return stats
 
 
-def get_model_stats(model_name, period='all'):
-    """
-    Muayyan model bo'yicha statistika
-    """
-    conn = get_conn()
-    c = conn.cursor()
-
-    # Vaqt filtri
-    date_filter = ""
-    if period == 'today':
-        date_filter = f"AND DATE(created_at) = DATE('now')"
-    elif period == 'week':
-        date_filter = f"AND created_at >= DATE('now', '-7 days')"
-    elif period == 'month':
-        date_filter = f"AND created_at >= DATE('now', '-30 days')"
-
-    # Model statistikasi
-    c.execute(f"""
-        SELECT 
-            COUNT(*) as total_inquiries,
-            COUNT(DISTINCT user_id) as unique_users
-        FROM price_history 
-        WHERE model_name = ? {date_filter}
-    """, (model_name,))
-
-    stats = dict(c.fetchone())
-
-    # Eng ko'p so'ralgan konfiguratsiyalar
-    c.execute(f"""
-        SELECT 
-            storage_size,
-            color_name,
-            COUNT(*) as count
-        FROM price_history 
-        WHERE model_name = ? {date_filter}
-        GROUP BY storage_size, color_name
-        ORDER BY count DESC
-        LIMIT 5
-    """, (model_name,))
-
-    stats['top_configs'] = [dict(row) for row in c.fetchall()]
-
-    conn.close()
-    return stats
-
-
-def get_recent_history(user_id, limit=10):
-    """Foydalanuvchining oxirgi narxlatish tarixi"""
-    conn = get_conn()
-    c = conn.cursor()
-
-    c.execute("SELECT id FROM users WHERE user_id = ?", (user_id,))
-    user_row = c.fetchone()
-    if not user_row:
-        conn.close()
-        return []
-
-    db_user_id = user_row['id']
-
-    c.execute("""
-        SELECT 
-            model_name,
-            storage_size,
-            color_name,
-            sim_type,
-            battery_label,
-            has_box,
-            damage_pct,
-            final_price,
-            created_at
-        FROM price_history 
-        WHERE user_id = ?
-        ORDER BY created_at DESC
-        LIMIT ?
-    """, (db_user_id, limit))
-
-    history = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return history
-
-
-def get_daily_stats(days=7):
-    """Kunlik statistika grafigi uchun"""
-    conn = get_conn()
-    c = conn.cursor()
-
-    c.execute("""
-        SELECT 
-            DATE(created_at) as date,
-            COUNT(*) as count,
-            COUNT(DISTINCT user_id) as users
-        FROM price_history 
-        WHERE created_at >= DATE('now', ? || ' days')
-        GROUP BY DATE(created_at)
-        ORDER BY date DESC
-    """, (f'-{days}',))
-
-    stats = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return stats
-
-
-def get_hourly_stats(date=None):
-    """Soatlik statistika (bugun yoki berilgan sana uchun)"""
-    conn = get_conn()
-    c = conn.cursor()
-
-    if date is None:
-        date = datetime.now().strftime('%Y-%m-%d')
-
-    c.execute("""
-        SELECT 
-            strftime('%H', created_at) as hour,
-            COUNT(*) as count
-        FROM price_history 
-        WHERE DATE(created_at) = ?
-        GROUP BY hour
-        ORDER BY hour
-    """, (date,))
-
-    stats = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return stats
-
-
 def get_all_users():
     """Barcha foydalanuvchilarni olish (admin uchun)"""
     conn = get_conn()
@@ -388,6 +331,7 @@ def get_all_users():
             first_name,
             last_name,
             phone_number,
+            is_registered,
             created_at,
             last_active
         FROM users
@@ -404,6 +348,16 @@ def get_total_users():
     conn = get_conn()
     c = conn.cursor()
     c.execute("SELECT COUNT(*) as count FROM users")
+    count = c.fetchone()['count']
+    conn.close()
+    return count
+
+
+def get_registered_users_count():
+    """Ro'yxatdan o'tgan foydalanuvchilar soni"""
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) as count FROM users WHERE is_registered = 1")
     count = c.fetchone()['count']
     conn.close()
     return count

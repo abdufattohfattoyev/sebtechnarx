@@ -21,7 +21,7 @@ from utils.db_api.database import (
     get_models, get_storages, get_colors, get_batteries,
     get_sim_types, get_price, get_conn, DB_PATH, normalize_damage_format
 )
-from utils.db_api.stats_database import add_or_update_user, save_price_inquiry
+from utils.db_api.stats_database import add_or_update_user, save_price_inquiry, register_user, is_user_registered
 from data.config import ADMINS, START_PHOTO_FILE_ID
 
 # ================ KONSTANTALAR ================
@@ -38,7 +38,7 @@ PARTS = {
 }
 
 # Excel import uchun maksimal fayl hajmi (MB)
-MAX_FILE_SIZE_MB = 20
+MAX_FILE_SIZE_MB = 31
 
 
 # ================ HOLATLAR ================
@@ -276,7 +276,7 @@ def sort_batteries_naturally(batteries):
 async def start(message: types.Message):
     user = message.from_user
 
-    # Foydalanuvchi telefon raqamini yuborganligini tekshirish
+    # Foydalanuvchini bazaga qo'shish (telefon raqamsiz)
     user_data = add_or_update_user(
         user_id=user.id,
         username=user.username,
@@ -284,8 +284,8 @@ async def start(message: types.Message):
         last_name=user.last_name
     )
 
-    # Agar telefon raqami yo'q bo'lsa, so'rash
-    if not user_data or not user_data.get('phone_number'):
+    # Ro'yxatdan o'tganligini tekshirish
+    if not is_user_registered(user.id):
         text = f"""\
 👋 Assalomu alaykum, <b>{user.full_name}</b>!
 
@@ -296,13 +296,12 @@ async def start(message: types.Message):
         await message.answer(text, reply_markup=phone_request_kb(), parse_mode="HTML")
         await UserState.waiting_phone.set()
     else:
-        # Telefon raqami mavjud bo'lsa, asosiy menyuni ko'rsatish
+        # Ro'yxatdan o'tgan - asosiy menyuni ko'rsatish
         models = get_models()
         text = f"""\
 👋 Assalomu alaykum, <b>{user.full_name}</b>!
 
 📱 iPhone narxlarini aniq hisoblaymiz
-✅ Hozir <b>{len(models)}</b> ta model mavjud
 
 <b>⬇️ Quyidagi menyulardan birini tanlang:</b>
 """
@@ -315,18 +314,12 @@ async def process_phone(message: types.Message, state: FSMContext):
     user = message.from_user
     phone = message.contact.phone_number
 
-    # Telefon raqamni bazaga saqlash
-    add_or_update_user(
-        user_id=user.id,
-        username=user.username,
-        first_name=user.first_name,
-        last_name=user.last_name,
-        phone_number=phone
-    )
+    # Telefon raqam bilan ro'yxatdan o'tkazish
+    register_user(user_id=user.id, phone_number=phone)
 
     models = get_models()
     text = f"""\
-✅ Rahmat, <b>{user.full_name}</b>!
+👋 Assalomu alaykum, <b>{user.full_name}</b>!
 
 📱 iPhone narxlarini aniq hisoblaymiz
 ✅ Hozir <b>{len(models)}</b> ta model mavjud
@@ -1576,7 +1569,7 @@ async def about(message: types.Message):
 
 📞 <b>Aloqa:</b>
 - Taklif va shikoyatlar uchun: @FATTOYEVABDUFATTOH
-- Yangiliklar: @iphone_uzb
+- Yangiliklar: @sebtech1
 
 <i>Bot doimiy yangilanib boriladi!</i>
 """

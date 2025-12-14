@@ -1,11 +1,10 @@
+# stats_database.py
 import sqlite3
 import os
-import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "data", "iphone_bot.db")
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
 
 def get_conn():
@@ -14,571 +13,415 @@ def get_conn():
     return conn
 
 
-def init_db():
+def init_stats_tables():
+    """Statistika uchun jadvallar yaratish"""
     conn = get_conn()
     c = conn.cursor()
 
-    # Models
+    # Foydalanuvchilar jadvali
     c.execute('''
-        CREATE TABLE IF NOT EXISTS models (
+        CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE NOT NULL,
-            is_active INTEGER DEFAULT 1,
-            order_num INTEGER DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-
-    # Storages
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS storages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            model_id INTEGER,
-            size TEXT NOT NULL,
-            price_difference REAL DEFAULT 0,
-            is_standard BOOLEAN DEFAULT 0,
-            FOREIGN KEY(model_id) REFERENCES models(id) ON DELETE CASCADE,
-            UNIQUE(model_id, size)
-        )
-    ''')
-
-    # Colors
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS colors (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            model_id INTEGER,
-            name TEXT NOT NULL,
-            color_type TEXT DEFAULT 'standard',
-            price_difference REAL DEFAULT 0,
-            FOREIGN KEY(model_id) REFERENCES models(id) ON DELETE CASCADE,
-            UNIQUE(model_id, name)
-        )
-    ''')
-
-    # Batteries
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS batteries (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            model_id INTEGER,
-            label TEXT NOT NULL,
-            min_percent INTEGER DEFAULT 100,
-            max_percent INTEGER DEFAULT 100,
-            price_difference REAL DEFAULT 0,
-            is_standard BOOLEAN DEFAULT 1,
-            FOREIGN KEY(model_id) REFERENCES models(id) ON DELETE CASCADE,
-            UNIQUE(model_id, label)
-        )
-    ''')
-
-    # SIM turlari
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS sim_types (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            model_id INTEGER,
-            type TEXT NOT NULL,
-            price_difference REAL DEFAULT 0,
-            FOREIGN KEY(model_id) REFERENCES models(id) ON DELETE CASCADE,
-            UNIQUE(model_id, type)
-        )
-    ''')
-
-    # Replaced parts (alohida qismlar uchun jadval)
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS parts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            model_id INTEGER,
-            part_name TEXT NOT NULL,
-            price_difference REAL DEFAULT 0,
-            UNIQUE(model_id, part_name),
-            FOREIGN KEY(model_id) REFERENCES models(id) ON DELETE CASCADE
-        )
-    ''')
-
-    # Prices - Asosiy jadval
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS prices (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            model_id INTEGER NOT NULL,
-            storage_size TEXT NOT NULL,
-            color_name TEXT DEFAULT '',
-            sim_type TEXT DEFAULT 'physical',
-            battery_label TEXT DEFAULT '100%',
-            has_box BOOLEAN DEFAULT 1,
-            damage_pct TEXT DEFAULT 'Yangi',
-            price REAL NOT NULL,
+            user_id INTEGER UNIQUE NOT NULL,
+            username TEXT,
+            first_name TEXT,
+            last_name TEXT,
+            phone_number TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(model_id) REFERENCES models(id) ON DELETE CASCADE,
-            UNIQUE(model_id, storage_size, color_name, sim_type, battery_label, has_box, damage_pct)
+            last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
 
-    # Indexlar
-    c.execute('CREATE INDEX IF NOT EXISTS idx_prices_model ON prices(model_id)')
-    c.execute(
-        'CREATE INDEX IF NOT EXISTS idx_prices_lookup ON prices(model_id, storage_size, color_name, sim_type, battery_label, has_box, damage_pct)')
+    # Narxlatish tarixi - har bir tugallangan narxlatish jarayoni
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS price_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            model_name TEXT NOT NULL,
+            storage_size TEXT NOT NULL,
+            color_name TEXT NOT NULL,
+            sim_type TEXT NOT NULL,
+            battery_label TEXT NOT NULL,
+            has_box INTEGER NOT NULL,
+            damage_pct TEXT NOT NULL,
+            final_price TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    ''')
+
+    # Indekslar tezkorlik uchun
+    c.execute('CREATE INDEX IF NOT EXISTS idx_price_history_user ON price_history(user_id)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_price_history_date ON price_history(created_at)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_price_history_model ON price_history(model_name)')
 
     conn.commit()
     conn.close()
+    print("✅ Statistika jadvallari yaratildi")
 
 
-# ============= NORMALIZE FUNKSIYALARI - TO'G'RILANGAN =============
-
-def normalize_damage_format(damage_text):
-    """
-    Damage textini normallashtirish - Bot formatiga
-    Input: har qanday format
-    Output: bot formati (battery, screen, glass, body, etc.)
-    """
-    if not damage_text:
-        return "Yangi"
-
-    damage_text = str(damage_text).strip()
-
-    # Bo'sh yoki Yangi
-    if damage_text.lower() in ["yangi", "none", "nan", ""]:
-        return "Yangi"
-
-    # Bo'shliqlarni tozalash
-    damage_text = damage_text.replace('  ', ' ')
-    damage_text = damage_text.replace(' + ', '+')
-    damage_text = damage_text.replace(' +', '+')
-    damage_text = damage_text.replace('+ ', '+')
-    damage_text = damage_text.replace(', ', '+')
-
-    # Mapping: har qanday format -> bot format (lowercase)
-    part_mapping = {
-        # Batareyka
-        'batareyka': 'battery', 'batareya': 'battery', 'battery': 'battery',
-        'батарея': 'battery', 'аккумулятор': 'battery',
-
-        # Krishka
-        'krishka': 'back_cover', 'back_cover': 'back_cover', 'back cover': 'back_cover',
-        'backcover': 'back_cover', 'кришка': 'back_cover',
-
-        # Face ID
-        'face id': 'face_id', 'faceid': 'face_id', 'face_id': 'face_id',
-
-        # Oyna
-        'oyna': 'glass', 'glass': 'glass', 'ойна': 'glass', 'стекло': 'glass',
-
-        # Ekran
-        'ekran': 'screen', 'screen': 'screen', 'экран': 'screen',
-
-        # Kamera
-        'kamera': 'camera', 'camera': 'camera', 'камера': 'camera',
-
-        # Qirilgan
-        'qirilgan': 'broken', 'broken': 'broken', 'разбит': 'broken',
-
-        # Korpus
-        'korpus': 'body', 'body': 'body', 'корпус': 'body',
-    }
-
-    # Split qilish
-    if '+' in damage_text:
-        parts = [p.strip() for p in damage_text.split('+')]
-    else:
-        parts = [damage_text]
-
-    # Normalize
-    normalized_parts = []
-    for part in parts:
-        part_lower = part.lower().strip()
-
-        if not part_lower:
-            continue
-
-        # Mappingdan topish
-        if part_lower in part_mapping:
-            normalized_parts.append(part_mapping[part_lower])
-        else:
-            # Agar topilmasa, original nomni saqlaymiz
-            normalized_parts.append(part_lower)
-
-    if not normalized_parts:
-        return "Yangi"
-
-    # Sort (consistency uchun)
-    normalized_parts.sort()
-
-    return '+'.join(normalized_parts)
-
-
-def normalize_for_search(damage_text):
-    """
-    Qidirish uchun damage textini normallashtirish
-    """
-    if not damage_text:
-        return "yangi"
-
-    damage_text = str(damage_text).strip()
-
-    if damage_text.lower() in ["yangi", "none", "nan", ""]:
-        return "yangi"
-
-    # Normalize qilamiz
-    normalized = normalize_damage_format(damage_text)
-
-    # Agar "Yangi" bo'lsa
-    if normalized == "Yangi":
-        return "yangi"
-
-    # Lowercase
-    return normalized.lower()
-
-
-# ===================== ASOSIY FUNKSIYALAR =====================
-
-def get_models():
-    conn = get_conn()
-    c = conn.cursor()
-    c.execute("SELECT id, name FROM models WHERE is_active = 1 ORDER BY order_num, name")
-    rows = c.fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
-
-
-def get_storages(model_id):
-    conn = get_conn()
-    c = conn.cursor()
-    c.execute("SELECT size FROM storages WHERE model_id = ?", (model_id,))
-    rows = c.fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
-
-
-def get_colors(model_id):
-    conn = get_conn()
-    c = conn.cursor()
-    c.execute("SELECT name FROM colors WHERE model_id = ?", (model_id,))
-    rows = c.fetchall()
-    conn.close()
-    return [dict(row) for row in rows] if rows else [{"name": "Standart"}]
-
-
-def get_batteries(model_id):
-    conn = get_conn()
-    c = conn.cursor()
-    c.execute("SELECT label FROM batteries WHERE model_id = ?", (model_id,))
-    rows = c.fetchall()
-    conn.close()
-    return [dict(row) for row in rows] if rows else [{"label": "100%"}]
-
-
-def get_sim_types(model_id):
-    conn = get_conn()
-    c = conn.cursor()
-    c.execute("SELECT type FROM sim_types WHERE model_id = ?", (model_id,))
-    rows = c.fetchall()
-    conn.close()
-    types = [dict(row)['type'] for row in rows]
-    return [{"type": t} for t in types] if types else [{"type": "physical"}]
-
-
-def get_parts_for_model(model_id):
-    """Model uchun alohida qismlarni olish"""
-    conn = get_conn()
-    c = conn.cursor()
-    c.execute("SELECT part_name FROM parts WHERE model_id = ?", (model_id,))
-    rows = c.fetchall()
-    conn.close()
-    return [dict(row)['part_name'] for row in rows]
-
-
-def get_price(model_id, storage, color, sim_type, battery, has_box, damage):
-    """
-    ⚡ SUPER DEBUG VERSION - aniq qidirish
-    """
+# Foydalanuvchi funksiyalari
+def add_or_update_user(user_id, username=None, first_name=None, last_name=None, phone_number=None):
+    """Foydalanuvchini qo'shish yoki yangilash"""
     conn = get_conn()
     c = conn.cursor()
 
-    # Color to'g'rilash
-    color_name = color if color and color != "Standart" else ""
-
-    # Box holati
-    has_box_int = 1 if has_box == "Bor" or has_box == True else 0
-
-    # Damage ni normallashtirish
-    damage_pct = str(damage).strip()
-    if not damage_pct or damage_pct.lower() in ["yangi", "none", "nan"]:
-        damage_pct = "Yangi"
-    else:
-        damage_pct = normalize_damage_format(damage_pct)
-
-    # Qidirish formati
-    search_damage = normalize_for_search(damage_pct)
-
-    print(f"\n{'=' * 70}")
-    print(f"🔍 GET_PRICE DEBUG:")
-    print(f"{'=' * 70}")
-    print(f"📥 INPUT:")
-    print(f"   Model ID: {model_id}")
-    print(f"   Storage: {storage}")
-    print(f"   Color: '{color}' → '{color_name}'")
-    print(f"   SIM: {sim_type}")
-    print(f"   Battery: {battery}")
-    print(f"   Has Box: {has_box} → {has_box_int}")
-    print(f"   Damage: '{damage}' → normalized: '{damage_pct}' → search: '{search_damage}'")
-
-    # 1. BAZADAGI BARCHA VARIANTLARNI KO'RISH
-    print(f"\n📊 BAZADAGI BARCHA VARIANTLAR (model={model_id}):")
-    c.execute("""
-        SELECT id, storage_size, color_name, sim_type, battery_label, has_box, damage_pct, price
-        FROM prices 
-        WHERE model_id = ?
-        LIMIT 10
-    """, (model_id,))
-
-    all_in_db = c.fetchall()
-    if all_in_db:
-        for row in all_in_db:
-            print(f"   ID={row['id']}: storage={row['storage_size']}, color='{row['color_name']}', "
-                  f"sim={row['sim_type']}, battery={row['battery_label']}, "
-                  f"box={row['has_box']}, damage='{row['damage_pct']}', price=${row['price']}")
-    else:
-        print("   ❌ BAZADA HECH NARSA YO'Q!")
-        conn.close()
-        return None
-
-    # 2. ANIQ PARAMETRLAR BILAN QIDIRISH
-    print(f"\n🎯 QIDIRILMOQDA (aniq parametrlar):")
-    print(f"   model_id={model_id}, storage={storage}, color='{color_name}'")
-    print(f"   sim={sim_type}, battery={battery}, box={has_box_int}, damage='{search_damage}'")
-
-    c.execute("""
-        SELECT id, price, damage_pct FROM prices 
-        WHERE model_id = ? 
-        AND storage_size = ? 
-        AND color_name = ? 
-        AND sim_type = ? 
-        AND battery_label = ? 
-        AND has_box = ?
-    """, (model_id, storage, color_name, sim_type, battery, has_box_int))
-
-    matching_rows = c.fetchall()
-
-    if matching_rows:
-        print(f"   ✅ {len(matching_rows)} ta mos keluvchi variant topildi:")
-        for row in matching_rows:
-            db_damage = row['damage_pct']
-            normalized_db_damage = normalize_for_search(db_damage)
-            match = "✅ MOS!" if normalized_db_damage == search_damage else "❌"
-            print(
-                f"      ID={row['id']}: damage='{db_damage}' → search='{normalized_db_damage}' {match} price=${row['price']}")
-
-            if normalized_db_damage == search_damage:
-                print(f"\n🎉 TOPILDI! ID={row['id']}, Price=${row['price']}")
-                conn.close()
-                return row['price']
-    else:
-        print(f"   ❌ Hech narsa topilmadi")
-
-    # 3. DAMAGE NI HISOBGA OLMAY QIDIRISH
-    print(f"\n🔄 DAMAGE NI HISOBGA OLMAY QIDIRISH:")
-    c.execute("""
-        SELECT id, damage_pct, price FROM prices 
-        WHERE model_id = ? 
-        AND storage_size = ? 
-        AND color_name = ? 
-        AND sim_type = ? 
-        AND battery_label = ? 
-        AND has_box = ?
-    """, (model_id, storage, color_name, sim_type, battery, has_box_int))
-
-    rows = c.fetchall()
-    if rows:
-        print(f"   Topildi {len(rows)} ta variant (damage turlicha):")
-        for row in rows:
-            print(f"      ID={row['id']}: damage='{row['damage_pct']}', price=${row['price']}")
-    else:
-        print(f"   ❌ Hech narsa yo'q")
-
-    # 4. QUTI NI HISOBGA OLMAY QIDIRISH
-    print(f"\n🔄 QUTI NI HISOBGA OLMAY QIDIRISH:")
-    c.execute("""
-        SELECT id, has_box, damage_pct, price FROM prices 
-        WHERE model_id = ? 
-        AND storage_size = ? 
-        AND color_name = ? 
-        AND sim_type = ? 
-        AND battery_label = ?
-    """, (model_id, storage, color_name, sim_type, battery))
-
-    rows = c.fetchall()
-    if rows:
-        print(f"   Topildi {len(rows)} ta variant:")
-        for row in rows:
-            print(f"      ID={row['id']}: box={row['has_box']}, damage='{row['damage_pct']}', price=${row['price']}")
-    else:
-        print(f"   ❌ Hech narsa yo'q")
-
-    print(f"\n❌ NARX TOPILMADI!")
-    print(f"{'=' * 70}\n")
-
-    conn.close()
-    return None
-
-
-def add_model(name, order_num=0):
-    conn = get_conn()
-    c = conn.cursor()
-    try:
-        c.execute("INSERT OR IGNORE INTO models (name, order_num) VALUES (?, ?)", (name, order_num))
-        c.execute("SELECT id FROM models WHERE name = ?", (name,))
+    # Agar phone_number berilmagan bo'lsa, mavjud telefon raqamni saqlash
+    if phone_number is None:
+        c.execute("SELECT phone_number FROM users WHERE user_id = ?", (user_id,))
         row = c.fetchone()
-        model_id = row['id'] if row else None
-        conn.commit()
-        return model_id
-    except Exception as e:
-        print(f"Model qo'shishda xato: {e}")
-        return None
-    finally:
-        conn.close()
+        if row:
+            phone_number = row['phone_number']
+
+    c.execute("""
+        INSERT INTO users (user_id, username, first_name, last_name, phone_number, last_active)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id) DO UPDATE SET
+            username = excluded.username,
+            first_name = excluded.first_name,
+            last_name = excluded.last_name,
+            phone_number = COALESCE(excluded.phone_number, phone_number),
+            last_active = CURRENT_TIMESTAMP
+    """, (user_id, username, first_name, last_name, phone_number))
+
+    conn.commit()
+
+    # Yangilangan ma'lumotni qaytarish
+    c.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+    user_data = c.fetchone()
+    conn.close()
+
+    return dict(user_data) if user_data else None
 
 
-def add_storage(model_id, size):
+def get_user_by_telegram_id(user_id):
+    """Telegram ID orqali foydalanuvchi ma'lumotlarini olish"""
     conn = get_conn()
     c = conn.cursor()
-    try:
-        c.execute("INSERT OR IGNORE INTO storages (model_id, size) VALUES (?, ?)", (model_id, size))
-        conn.commit()
-        return True
-    except Exception as e:
-        print(f"Xotira qo'shishda xato: {e}")
-        return False
-    finally:
-        conn.close()
-
-
-def add_color(model_id, name):
-    conn = get_conn()
-    c = conn.cursor()
-    try:
-        c.execute("INSERT OR IGNORE INTO colors (model_id, name) VALUES (?, ?)", (model_id, name))
-        conn.commit()
-        return True
-    except Exception as e:
-        print(f"Rang qo'shishda xato: {e}")
-        return False
-    finally:
-        conn.close()
-
-
-def add_battery(model_id, label):
-    conn = get_conn()
-    c = conn.cursor()
-    try:
-        c.execute("INSERT OR IGNORE INTO batteries (model_id, label) VALUES (?, ?)", (model_id, label))
-        conn.commit()
-        return True
-    except Exception as e:
-        print(f"Batareya qo'shishda xato: {e}")
-        return False
-    finally:
-        conn.close()
-
-
-def add_sim_type(model_id, sim_type):
-    conn = get_conn()
-    c = conn.cursor()
-    try:
-        c.execute("INSERT OR IGNORE INTO sim_types (model_id, type) VALUES (?, ?)", (model_id, sim_type))
-        conn.commit()
-        return True
-    except Exception as e:
-        print(f"SIM turi qo'shishda xato: {e}")
-        return False
-    finally:
-        conn.close()
-
-
-def add_part(model_id, part_name):
-    """Alohida qism qo'shish - bot formatida"""
-    conn = get_conn()
-    c = conn.cursor()
-    try:
-        # Normalize qilamiz (bot formatiga)
-        normalized_part = normalize_damage_format(part_name)
-        c.execute("INSERT OR IGNORE INTO parts (model_id, part_name) VALUES (?, ?)", (model_id, normalized_part))
-        conn.commit()
-        return True
-    except Exception as e:
-        print(f"Qism qo'shishda xato: {e}")
-        return False
-    finally:
-        conn.close()
-
-
-def add_price_record(model_id, storage, color, sim_type, battery, has_box, damage, price):
-    """Narxni qo'shish - damage ni bot formatida saqlash"""
-    conn = get_conn()
-    c = conn.cursor()
-    try:
-        color_name = color if color and color != "Standart" else ""
-
-        # Damage ni normallashtirish (bot formatiga)
-        damage = str(damage).strip()
-        if not damage or damage.lower() in ['yangi', 'nan', 'none']:
-            damage_pct = "Yangi"
-        else:
-            damage_pct = normalize_damage_format(damage)
-
-        # Box ni int ga o'tkazish
-        has_box_int = 1 if has_box == "Bor" or has_box == True else 0
-
-        c.execute("""
-            INSERT OR REPLACE INTO prices 
-            (model_id, storage_size, color_name, sim_type, battery_label, has_box, damage_pct, price, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (model_id, storage, color_name, sim_type, battery, has_box_int, damage_pct, price, datetime.now()))
-
-        conn.commit()
-        return True
-    except Exception as e:
-        print(f"Narx qo'shishda xato: {e}")
-        return False
-    finally:
-        conn.close()
-
-
-def get_total_prices_count():
-    conn = get_conn()
-    c = conn.cursor()
-    c.execute("SELECT COUNT(*) as count FROM prices")
+    c.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
     row = c.fetchone()
     conn.close()
-    return row['count'] if row else 0
+    return dict(row) if row else None
 
 
-def get_prices_for_model(model_id):
+# Narxlatish tarixi funksiyalari
+def save_price_inquiry(user_id, model_name, storage, color, sim, battery, box, damage, price):
+    """Tugallangan narxlatishni saqlash"""
     conn = get_conn()
-    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+
+    # Foydalanuvchi ID sini olish
+    c.execute("SELECT id FROM users WHERE user_id = ?", (user_id,))
+    user_row = c.fetchone()
+    if not user_row:
+        conn.close()
+        return False
+
+    db_user_id = user_row['id']
+
+    c.execute("""
+        INSERT INTO price_history 
+        (user_id, model_name, storage_size, color_name, sim_type, 
+         battery_label, has_box, damage_pct, final_price)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (db_user_id, model_name, storage, color, sim, battery, box, damage, price))
+
+    conn.commit()
+    conn.close()
+    return True
+
+
+# STATISTIKA FUNKSIYALARI
+
+def get_user_stats(user_id, period='all'):
+    """
+    Foydalanuvchi statistikasi
+    period: 'today', 'week', 'month', 'all'
+    """
+    conn = get_conn()
+    c = conn.cursor()
+
+    # Foydalanuvchi DB ID sini olish
+    c.execute("SELECT id FROM users WHERE user_id = ?", (user_id,))
+    user_row = c.fetchone()
+    if not user_row:
+        conn.close()
+        return None
+
+    db_user_id = user_row['id']
+
+    # Vaqt filtri
+    date_filter = ""
+    if period == 'today':
+        date_filter = f"AND DATE(created_at) = DATE('now')"
+    elif period == 'week':
+        date_filter = f"AND created_at >= DATE('now', '-7 days')"
+    elif period == 'month':
+        date_filter = f"AND created_at >= DATE('now', '-30 days')"
+
+    # Umumiy statistika
+    c.execute(f"""
+        SELECT 
+            COUNT(*) as total_inquiries,
+            COUNT(DISTINCT model_name) as unique_models,
+            COUNT(DISTINCT DATE(created_at)) as active_days
+        FROM price_history 
+        WHERE user_id = ? {date_filter}
+    """, (db_user_id,))
+
+    stats = dict(c.fetchone())
+
+    # Eng ko'p narxlatilgan modellar (TOP 5)
+    c.execute(f"""
+        SELECT 
+            model_name,
+            COUNT(*) as count
+        FROM price_history 
+        WHERE user_id = ? {date_filter}
+        GROUP BY model_name
+        ORDER BY count DESC
+        LIMIT 5
+    """, (db_user_id,))
+
+    stats['top_models'] = [dict(row) for row in c.fetchall()]
+
+    conn.close()
+    return stats
+
+
+def get_global_stats(period='all'):
+    """
+    Umumiy statistika (barcha foydalanuvchilar)
+    """
+    conn = get_conn()
+    c = conn.cursor()
+
+    # Vaqt filtri
+    date_filter = ""
+    if period == 'today':
+        date_filter = f"WHERE DATE(created_at) = DATE('now')"
+    elif period == 'week':
+        date_filter = f"WHERE created_at >= DATE('now', '-7 days')"
+    elif period == 'month':
+        date_filter = f"WHERE created_at >= DATE('now', '-30 days')"
+
+    # Umumiy statistika
+    c.execute(f"""
+        SELECT 
+            COUNT(*) as total_inquiries,
+            COUNT(DISTINCT user_id) as active_users,
+            COUNT(DISTINCT model_name) as unique_models
+        FROM price_history 
+        {date_filter}
+    """)
+
+    stats = dict(c.fetchone())
+
+    # TOP modellar
+    c.execute(f"""
+        SELECT 
+            model_name,
+            COUNT(*) as count
+        FROM price_history 
+        {date_filter}
+        GROUP BY model_name
+        ORDER BY count DESC
+        LIMIT 10
+    """)
+
+    stats['top_models'] = [dict(row) for row in c.fetchall()]
+
+    # TOP foydalanuvchilar
+    c.execute(f"""
+        SELECT 
+            u.username,
+            u.first_name,
+            COUNT(ph.id) as count
+        FROM price_history ph
+        JOIN users u ON ph.user_id = u.id
+        {date_filter}
+        GROUP BY ph.user_id
+        ORDER BY count DESC
+        LIMIT 10
+    """)
+
+    stats['top_users'] = [dict(row) for row in c.fetchall()]
+
+    conn.close()
+    return stats
+
+
+def get_model_stats(model_name, period='all'):
+    """
+    Muayyan model bo'yicha statistika
+    """
+    conn = get_conn()
+    c = conn.cursor()
+
+    # Vaqt filtri
+    date_filter = ""
+    if period == 'today':
+        date_filter = f"AND DATE(created_at) = DATE('now')"
+    elif period == 'week':
+        date_filter = f"AND created_at >= DATE('now', '-7 days')"
+    elif period == 'month':
+        date_filter = f"AND created_at >= DATE('now', '-30 days')"
+
+    # Model statistikasi
+    c.execute(f"""
+        SELECT 
+            COUNT(*) as total_inquiries,
+            COUNT(DISTINCT user_id) as unique_users
+        FROM price_history 
+        WHERE model_name = ? {date_filter}
+    """, (model_name,))
+
+    stats = dict(c.fetchone())
+
+    # Eng ko'p so'ralgan konfiguratsiyalar
+    c.execute(f"""
+        SELECT 
+            storage_size,
+            color_name,
+            COUNT(*) as count
+        FROM price_history 
+        WHERE model_name = ? {date_filter}
+        GROUP BY storage_size, color_name
+        ORDER BY count DESC
+        LIMIT 5
+    """, (model_name,))
+
+    stats['top_configs'] = [dict(row) for row in c.fetchall()]
+
+    conn.close()
+    return stats
+
+
+def get_recent_history(user_id, limit=10):
+    """Foydalanuvchining oxirgi narxlatish tarixi"""
+    conn = get_conn()
+    c = conn.cursor()
+
+    c.execute("SELECT id FROM users WHERE user_id = ?", (user_id,))
+    user_row = c.fetchone()
+    if not user_row:
+        conn.close()
+        return []
+
+    db_user_id = user_row['id']
+
+    c.execute("""
+        SELECT 
+            model_name,
+            storage_size,
+            color_name,
+            sim_type,
+            battery_label,
+            has_box,
+            damage_pct,
+            final_price,
+            created_at
+        FROM price_history 
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+        LIMIT ?
+    """, (db_user_id, limit))
+
+    history = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return history
+
+
+def get_daily_stats(days=7):
+    """Kunlik statistika grafigi uchun"""
+    conn = get_conn()
+    c = conn.cursor()
+
+    c.execute("""
+        SELECT 
+            DATE(created_at) as date,
+            COUNT(*) as count,
+            COUNT(DISTINCT user_id) as users
+        FROM price_history 
+        WHERE created_at >= DATE('now', ? || ' days')
+        GROUP BY DATE(created_at)
+        ORDER BY date DESC
+    """, (f'-{days}',))
+
+    stats = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return stats
+
+
+def get_hourly_stats(date=None):
+    """Soatlik statistika (bugun yoki berilgan sana uchun)"""
+    conn = get_conn()
+    c = conn.cursor()
+
+    if date is None:
+        date = datetime.now().strftime('%Y-%m-%d')
+
+    c.execute("""
+        SELECT 
+            strftime('%H', created_at) as hour,
+            COUNT(*) as count
+        FROM price_history 
+        WHERE DATE(created_at) = ?
+        GROUP BY hour
+        ORDER BY hour
+    """, (date,))
+
+    stats = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return stats
+
+
+def get_all_users():
+    """Barcha foydalanuvchilarni olish (admin uchun)"""
+    conn = get_conn()
+    c = conn.cursor()
+
+    c.execute("""
+        SELECT 
+            user_id,
+            username,
+            first_name,
+            last_name,
+            phone_number,
+            created_at,
+            last_active
+        FROM users
+        ORDER BY last_active DESC
+    """)
+
+    users = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return users
+
+
+def get_total_users():
+    """Jami foydalanuvchilar soni"""
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) as count FROM users")
+    count = c.fetchone()['count']
+    conn.close()
+    return count
+
+
+def get_active_users(days=7):
+    """Faol foydalanuvchilar soni (oxirgi N kun)"""
+    conn = get_conn()
     c = conn.cursor()
     c.execute("""
-        SELECT * FROM prices 
-        WHERE model_id=? 
-        ORDER BY price DESC 
-        LIMIT 5
-    """, (model_id,))
-    rows = c.fetchall()
+        SELECT COUNT(*) as count 
+        FROM users 
+        WHERE last_active >= DATE('now', ? || ' days')
+    """, (f'-{days}',))
+    count = c.fetchone()['count']
     conn.close()
-    return rows
+    return count
 
 
-def clear_all_prices():
-    conn = get_conn()
-    c = conn.cursor()
-    try:
-        c.execute("DELETE FROM prices")
-        conn.commit()
-        return True
-    except Exception as e:
-        print(f"Narxlarni tozalashda xato: {e}")
-        return False
-    finally:
-        conn.close()
-
-
-# Boshida avto yaratish
-init_db()
+# Avtomatik ishga tushirish
+init_stats_tables()

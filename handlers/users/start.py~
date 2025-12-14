@@ -12,7 +12,8 @@ from datetime import datetime, timedelta
 from aiogram import types
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, InputFile
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, InputFile, \
+    ReplyKeyboardRemove
 from aiogram.utils.exceptions import NetworkError, RetryAfter
 
 from loader import dp, bot
@@ -43,6 +44,7 @@ MAX_FILE_SIZE_MB = 20
 # ================ HOLATLAR ================
 
 class UserState(StatesGroup):
+    waiting_phone = State()
     waiting_model = State()
     waiting_storage = State()
     waiting_color = State()
@@ -67,20 +69,34 @@ class ExportState(StatesGroup):
 
 # ================ YANGILANGAN MENYULAR ================
 
+def phone_request_kb():
+    """Telefon raqam so'rash uchun klaviatura"""
+    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    kb.add(KeyboardButton("📱 Telefon raqamni yuborish", request_contact=True))
+    return kb
+
+
 def main_menu(is_admin=False):
-    """Asosiy menyu"""
+    """Asosiy menyu - 2 qatordan"""
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
 
     # Birinchi qator - 2 ta tugma
-    kb.row(KeyboardButton("📱 iPhone narxini bilish"))
-    kb.row(KeyboardButton("📊 Statistika"))
+    kb.row(
+        KeyboardButton("📱 iPhone narxini bilish"),
+        KeyboardButton("ℹ️ Biz haqimizda")
+    )
 
-    # Agar admin bo'lsa admin tugmalari
+    # Ikkinchi qator
     if is_admin:
-        kb.row(KeyboardButton("📥 Excel import"), KeyboardButton("👨‍💼 Admin panel"))
+        kb.row(
+            KeyboardButton("🔧 Admin panel"),
+            KeyboardButton("👨‍💼 Admin bilan aloqa")
+        )
+    else:
+        kb.row(
+            KeyboardButton("👨‍💼 Admin bilan aloqa")
+        )
 
-    # Oxirgi qator
-    kb.row(KeyboardButton("ℹ️ Biz haqimizda"))
     return kb
 
 
@@ -92,25 +108,32 @@ def back_kb():
 
 
 def admin_kb():
-    """Admin paneli uchun klaviatura"""
+    """Admin paneli uchun klaviatura - 2 qatordan"""
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
 
     # Birinchi qator - 2 ta tugma
-    kb.row(KeyboardButton("📊 Statistika"), KeyboardButton("📥 Excel import"))
+    kb.row(
+        KeyboardButton("📊 Statistika"),
+        KeyboardButton("📥 Excel import")
+    )
 
     # Ikkinchi qator - 2 ta tugma
-    kb.row(KeyboardButton("📤 Excel export"), KeyboardButton("🧹 Bazani tozalash"))
+    kb.row(
+        KeyboardButton("📤 Excel export"),
+        KeyboardButton("🧹 Bazani tozalash")
+    )
 
     # Uchinchi qator - 2 ta tugma
-    kb.row(KeyboardButton("📱 Namuna ma'lumot"), KeyboardButton("◀️ Orqaga"))
+    kb.row(
+        KeyboardButton("📱 Namuna ma'lumot"),
+        KeyboardButton("🏠 Bosh menyu")
+    )
 
-    # To'rtinchi qator - 1 ta tugma (markazda)
-    kb.row(KeyboardButton("🏠 Bosh menyu"))
     return kb
 
 
 def parts_choice_kb():
-    """Almashgan qism bormi degan savol uchun klaviatura"""
+    """Almashgan qism bormi degan savol uchun klaviatura (oddiy keyboard)"""
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.row(KeyboardButton("✅ Ha"), KeyboardButton("❌ Yo'q"))
     kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
@@ -182,15 +205,44 @@ def clear_database():
 
 
 def sort_models_naturally(models):
-    """iPhone modellarini to'g'ri tartibda saralash"""
+    """iPhone modellarini to'g'ri tartibda saralash (iPhone 11, 11 Pro, 11 Pro Max, ...)"""
 
-    def extract_number(name):
-        match = re.search(r'iPhone\s+(\d+)', name)
+    def extract_model_info(name):
+        """Model nomidan raqam va turini ajratib olish"""
+        name_lower = name.lower()
+
+        # XS, XR, X modellar uchun maxsus tartib
+        if 'xs max' in name_lower:
+            return (10.5, 2)
+        elif 'xs' in name_lower:
+            return (10.5, 1)
+        elif 'xr' in name_lower:
+            return (10.3, 0)
+        elif name_lower.endswith(' x'):
+            return (10, 0)
+
+        # Oddiy raqamli modellar
+        match = re.search(r'iphone\s+(\d+)', name_lower)
         if match:
-            return int(match.group(1))
-        return 0
+            number = int(match.group(1))
 
-    return sorted(models, key=lambda x: extract_number(x['name']), reverse=True)
+            # Pro Max, Pro, Mini, Plus kabi qo'shimchalarni aniqlash
+            if 'pro max' in name_lower:
+                priority = 3
+            elif 'plus' in name_lower:
+                priority = 3
+            elif 'pro' in name_lower:
+                priority = 2
+            elif 'mini' in name_lower:
+                priority = 1
+            else:
+                priority = 0
+
+            return (number, priority)
+
+        return (0, 0)
+
+    return sorted(models, key=lambda x: extract_model_info(x['name']), reverse=True)
 
 
 def sort_storages_naturally(storages):
@@ -223,12 +275,47 @@ def sort_batteries_naturally(batteries):
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
     user = message.from_user
-    add_or_update_user(
+
+    # Foydalanuvchini bazaga qo'shish (telefon raqamsiz)
+    user_data = add_or_update_user(
         user_id=user.id,
         username=user.username,
         first_name=user.first_name,
         last_name=user.last_name
     )
+
+    # Ro'yxatdan o'tganligini tekshirish
+    if not is_user_registered(user.id):
+        text = f"""\
+👋 Assalomu alaykum, <b>{user.full_name}</b>!
+
+📱 iPhone narxlarini aniq hisoblaymiz
+
+<b>⬇️ Davom etish uchun telefon raqamingizni yuboring:</b>
+"""
+        await message.answer(text, reply_markup=phone_request_kb(), parse_mode="HTML")
+        await UserState.waiting_phone.set()
+    else:
+        # Ro'yxatdan o'tgan - asosiy menyuni ko'rsatish
+        models = get_models()
+        text = f"""\
+👋 Assalomu alaykum, <b>{user.full_name}</b>!
+
+📱 iPhone narxlarini aniq hisoblaymiz
+
+<b>⬇️ Quyidagi menyulardan birini tanlang:</b>
+"""
+        await message.answer(text, reply_markup=main_menu(user.id in ADMINS), parse_mode="HTML")
+
+
+# === TELEFON RAQAM QABUL QILISH ===
+@dp.message_handler(content_types=['contact'], state=UserState.waiting_phone)
+async def process_phone(message: types.Message, state: FSMContext):
+    user = message.from_user
+    phone = message.contact.phone_number
+
+    # Telefon raqam bilan ro'yxatdan o'tkazish
+    register_user(user_id=user.id, phone_number=phone)
 
     models = get_models()
     text = f"""\
@@ -240,6 +327,7 @@ async def start(message: types.Message):
 <b>⬇️ Quyidagi menyulardan birini tanlang:</b>
 """
     await message.answer(text, reply_markup=main_menu(user.id in ADMINS), parse_mode="HTML")
+    await state.finish()
 
 
 # === MODEL TANLASH ===
@@ -335,7 +423,13 @@ async def back_handler(message: types.Message, state: FSMContext):
     elif current == UserState.waiting_parts.state:
         data = await state.get_data()
         await state.update_data(selected_parts=[])
-        await parts_choice_selected(types.Message(text="❌ Yo'q"), state)
+        # Inline callback orqali qaytish
+        await message.answer(
+            "<b>🔧 Telefonning qismlari almashganmi?</b>",
+            reply_markup=parts_choice_kb(),
+            parse_mode="HTML"
+        )
+        await UserState.waiting_parts_choice.set()
 
 
 # === QOLGAN BOSQICHLAR ===
@@ -392,7 +486,7 @@ async def battery_selected(message: types.Message, state: FSMContext):
     if len(sims) == 1:
         await state.update_data(sim_type=sims[0]['type'])
 
-        # Quti bor/yo'q uchun klaviatura
+        # Quti bor/yo'q uchun klaviatura (2 qatordan)
         kb = ReplyKeyboardMarkup(resize_keyboard=True)
         kb.row(KeyboardButton("✅ Bor"), KeyboardButton("❌ Yo'q"))
         kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
@@ -400,7 +494,7 @@ async def battery_selected(message: types.Message, state: FSMContext):
         await message.answer("<b>📦 Quti bor/yo'q:</b>", reply_markup=kb, parse_mode="HTML")
         await UserState.waiting_box.set()
     else:
-        # SIM turi uchun klaviatura
+        # SIM turi uchun klaviatura (2 qatordan)
         kb = ReplyKeyboardMarkup(resize_keyboard=True)
         kb.row(KeyboardButton("📱 SIM karta"), KeyboardButton("📲 eSIM"))
         kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
@@ -417,7 +511,7 @@ async def sim_selected(message: types.Message, state: FSMContext):
     sim_type = "esim" if "eSIM" in message.text else "physical"
     await state.update_data(sim_type=sim_type)
 
-    # Quti bor/yo'q uchun klaviatura
+    # Quti bor/yo'q uchun klaviatura (2 qatordan)
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.row(KeyboardButton("✅ Bor"), KeyboardButton("❌ Yo'q"))
     kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
@@ -434,7 +528,7 @@ async def box_selected(message: types.Message, state: FSMContext):
     has_box = "Bor" if "Bor" in message.text else "Yo'q"
     await state.update_data(has_box=has_box)
 
-    # Almashgan qism bormi degan savol
+    # Almashgan qism bormi degan savol (oddiy keyboard)
     await message.answer(
         "<b>🔧 Telefonning qismlari almashganmi?</b>",
         reply_markup=parts_choice_kb(),
@@ -454,22 +548,40 @@ async def parts_choice_selected(message: types.Message, state: FSMContext):
         await show_final_price(message, state)
         return
 
-    # Ha bosildi - Inline qismlar tanlovini ko'rsatish
-    markup = InlineKeyboardMarkup(row_width=2)
-    for key, name in PARTS.items():
-        markup.add(InlineKeyboardButton(f"☐ {name}", callback_data=f"part_{key}"))
-    markup.add(InlineKeyboardButton("➡️ Davom etish", callback_data="part_done"))
+    if message.text == "✅ Ha":
+        # Ha bosildi - Inline qismlar tanlovini ko'rsatish (2 tadan)
+        markup = InlineKeyboardMarkup(row_width=2)
+        for key, name in PARTS.items():
+            markup.insert(InlineKeyboardButton(f"☐ {name}", callback_data=f"part_{key}"))
+        markup.row(InlineKeyboardButton("✅ Davom etish", callback_data="part_done"))
 
+        # Faqat Orqaga va Bosh menyu qolsin
+        kb = ReplyKeyboardMarkup(resize_keyboard=True)
+        kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
+
+        await message.answer(
+            "<b>🔧 Almashgan qismlarni tanlang (maks 3 ta):</b>",
+            reply_markup=kb,
+            parse_mode="HTML"
+        )
+
+        # Inline klaviaturani alohida xabarda yuborish
+        await message.answer(
+            "⬇️ Quyidagi qismlardan tanlang:",
+            reply_markup=markup
+        )
+
+        await UserState.waiting_parts.set()
+        return
+
+    # Noto'g'ri javob
     await message.answer(
-        "<b>🔧 Almashgan qismlarni tanlang (maks 3 ta):</b>\n\n"
-        "⚠️ <i>Ekran va Oyna birga tanlanmaydi!</i>",
-        reply_markup=markup,
-        parse_mode="HTML"
+        "❌ Iltimos, tugmalardan birini tanlang:",
+        reply_markup=parts_choice_kb()
     )
-    await UserState.waiting_parts.set()
 
 
-# === INLINE CALLBACK ===
+# === INLINE CALLBACK - QISMLAR TANLASH ===
 @dp.callback_query_handler(state=UserState.waiting_parts)
 async def parts_callback(call: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
@@ -479,8 +591,20 @@ async def parts_callback(call: types.CallbackQuery, state: FSMContext):
         if not selected:
             await call.answer("❌ Hech narsa tanlanmadi!", show_alert=True)
             return
-        await call.message.edit_reply_markup(reply_markup=None)
+
+        # Tanlangan qismlarni saqlash
+        damage_display = " + ".join([PARTS[k] for k in sorted(selected)])
+        await state.update_data(damage_display=damage_display)
+
+        # Inline xabarlarni o'chirish
+        try:
+            await call.message.delete()
+        except:
+            pass
+
+        # To'g'ridan-to'g'ri yakuniy narxni ko'rsatish
         await show_final_price(call.message, state)
+        await call.answer()
         return
 
     part_key = call.data.replace("part_", "")
@@ -503,20 +627,29 @@ async def parts_callback(call: types.CallbackQuery, state: FSMContext):
 
     await state.update_data(selected_parts=selected)
 
-    # Yangi klaviatura
+    # Yangi klaviatura (2 tadan)
     markup = InlineKeyboardMarkup(row_width=2)
     for key, name in PARTS.items():
         text = f"{'✅' if key in selected else '☐'} {name}"
-        markup.add(InlineKeyboardButton(text, callback_data=f"part_{key}"))
-    markup.add(InlineKeyboardButton(f"➡️ Davom etish ({len(selected)}/3)", callback_data="part_done"))
+        markup.insert(InlineKeyboardButton(text, callback_data=f"part_{key}"))
+    markup.row(InlineKeyboardButton(f"✅ Davom etish ({len(selected)}/3)", callback_data="part_done"))
 
-    names = ", ".join([PARTS[k] for k in selected]) if selected else "hech qanday"
-    await call.message.edit_text(
-        f"<b>🔧 Tanlangan qismlar:</b> {names}\n\n"
-        f"⚠️ <i>Ekran va Oyna birga tanlanmaydi!</i>",
-        reply_markup=markup,
-        parse_mode="HTML"
-    )
+    # Tanlangan qismlar sonini ko'rsatish
+    selected_names = [PARTS[k] for k in sorted(selected)]
+    if selected_names:
+        text = f"<b>🔧 Tanlangan:</b> {', '.join(selected_names)}"
+    else:
+        text = "<b>🔧 Almashgan qismlarni tanlang (maks 3 ta):</b>"
+
+    try:
+        await call.message.edit_text(
+            text,
+            reply_markup=markup,
+            parse_mode="HTML"
+        )
+    except:
+        pass
+
     await call.answer()
 
 
@@ -531,7 +664,7 @@ async def show_final_price(message: types.Message, state: FSMContext):
         damage_display = "Yangi"
     else:
         damage_pct = "+".join(sorted(selected))
-        damage_display = " + ".join([PARTS[k] for k in sorted(selected)])
+        damage_display = data.get('damage_display', " + ".join([PARTS[k] for k in sorted(selected)]))
 
     # Narx olish
     price = get_price(
@@ -584,9 +717,12 @@ async def show_final_price(message: types.Message, state: FSMContext):
 <i>Narxlar taxminiy, bozordagi narxlar farq qilishi mumkin.</i>
     """.strip()
 
-    # Yakuniy klaviatura
+    # Yakuniy klaviatura (2 qatordan)
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.row(KeyboardButton("🔄 Yana hisoblash"), KeyboardButton("🏠 Bosh menyu"))
+    kb.row(
+        KeyboardButton("🔄 Yana hisoblash"),
+        KeyboardButton("🏠 Bosh menyu")
+    )
 
     await message.answer(text, reply_markup=kb, parse_mode="HTML")
     await state.finish()
@@ -598,10 +734,33 @@ async def again(message: types.Message, state: FSMContext):
     await choose_model(message, state)
 
 
+# === ADMIN BILAN ALOQA ===
+@dp.message_handler(lambda m: m.text == "👨‍💼 Admin bilan aloqa")
+async def contact_admin(message: types.Message):
+    text = """\
+<b>👨‍💼 ADMIN BILAN ALOQA</b>
+
+📞 <b>Murojaat uchun:</b>
+- Telegram: @FATTOYEVABDUFATTOH
+- Telefon: +998 93 799 70 04
+
+📝 <b>Savollar:</b>
+- Narxlar haqida
+- Bot ishida xatoliklar
+- Yangi imkoniyatlar
+
+💬 <b>Ishlash vaqti:</b>
+Har kuni 09:00 - 21:00
+
+<i>Tez orada javob beramiz!</i>
+"""
+    await message.answer(text, parse_mode="HTML")
+
+
 # ================ ADMIN FUNKSIYALARI ================
 
 # === ADMIN PANEL ===
-@dp.message_handler(lambda m: m.text == "👨‍💼 Admin panel" and m.from_user.id in ADMINS)
+@dp.message_handler(lambda m: m.text == "🔧 Admin panel" and m.from_user.id in ADMINS)
 async def admin_panel(message: types.Message):
     models_count = len(get_models())
     prices_count = get_total_prices_count()
@@ -631,8 +790,7 @@ async def admin_panel(message: types.Message):
 @dp.message_handler(lambda m: m.text == "📥 Excel import" and m.from_user.id in ADMINS)
 async def import_start(message: types.Message):
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.row(KeyboardButton("❌ Bekor qilish"))
-    kb.row(KeyboardButton("🏠 Bosh menyu"))
+    kb.row(KeyboardButton("❌ Bekor qilish"), KeyboardButton("🏠 Bosh menyu"))
 
     await message.answer(
         "<b>📥 Excel faylni yuboring</b> (.xlsx yoki .xls)\n\n"
@@ -1390,30 +1548,6 @@ Model: <b>{model['name']}</b>
         await message.answer(f"❌ Xatolik: {str(e)}")
 
 
-# === STATISTIKA (umumiy foydalanuvchilar uchun) ===
-@dp.message_handler(lambda m: m.text == "📊 Statistika")
-async def user_statistics(message: types.Message):
-    models_count = len(get_models())
-    prices_count = get_total_prices_count()
-
-    text = f"""\
-<b>📊 BOT STATISTIKASI</b>
-
-📱 <b>Modellar:</b> {models_count} ta
-💰 <b>Narxlar:</b> {prices_count} ta
-
-<b>📈 Faollik:</b>
-- Botda barcha iPhone modellari mavjud
-- Har bir model uchun 10+ turdagi narxlar
-- Narxlar real bozor asosida
-
-<b>ℹ️ Ma'lumot:</b>
-Narxlar taxminiy, bozordagi narxlar farq qilishi mumkin.
-"""
-
-    await message.answer(text, parse_mode="HTML")
-
-
 # === BIZ HAQIMIZDA ===
 @dp.message_handler(lambda m: m.text == "ℹ️ Biz haqimizda")
 async def about(message: types.Message):
@@ -1435,7 +1569,7 @@ async def about(message: types.Message):
 
 📞 <b>Aloqa:</b>
 - Taklif va shikoyatlar uchun: @FATTOYEVABDUFATTOH
-- Yangiliklar: @iphone_uzb
+- Yangiliklar: @sebtech1
 
 <i>Bot doimiy yangilanib boriladi!</i>
 """
