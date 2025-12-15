@@ -534,6 +534,3 @@ def clear_all_prices():
         conn.close()
 
 
-# Avtomatik ishga tushirish
-if __name__ != "__main__":
-    init_db()

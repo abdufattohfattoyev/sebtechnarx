@@ -690,3 +690,6 @@ def debug_database():
     print("======================\n")
 
 
+# Avtomatik ishga tushirish
+if __name__ != "__main__":
+    init_stats_tables()
