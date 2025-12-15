@@ -10,16 +10,5 @@ services:
     environment:
       - BOT_TOKEN=${BOT_TOKEN}
     volumes:
-      - ./data:/app/data  # Host papkasiga bog'lash
-      - bot_data:/app/data  # Nusxaviy volume
+      - ./data:/app/data
     restart: unless-stopped
-    networks:
-      - bot_network
-
-volumes:
-  bot_data:
-    driver: local
-
-networks:
-  bot_network:
-    driver: bridge
