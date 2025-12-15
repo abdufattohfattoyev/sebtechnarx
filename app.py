@@ -1,4 +1,4 @@
-# app.py - ASOSIY FAYL (to'g'ri versiya)
+# app.py - ASOSIY FAYL
 import logging
 from aiogram import executor
 
@@ -17,21 +17,21 @@ logging.basicConfig(
 async def on_startup(dispatcher):
     """Bot ishga tushganda bajariladigan funksiyalar"""
 
-    # 1. Asosiy database yaratish
+    # 1. Asosiy database yaratish (PHONES.DB)
     try:
         from utils.db_api.database import init_db
         init_db()
-        logging.info("✅ Asosiy baza yaratildi yoki ulandi")
+        logging.info("✅ phones.db yaratildi yoki ulandi")
     except Exception as e:
-        logging.error(f"❌ Asosiy baza xato: {e}")
+        logging.error(f"❌ phones.db xato: {e}")
 
-    # 2. STATISTIKA database yaratish
+    # 2. Statistika database yaratish (STATS.DB)
     try:
         from utils.db_api.stats_database import init_stats_tables
         init_stats_tables()
-        logging.info("✅ Statistika bazasi yaratildi!")
+        logging.info("✅ stats.db yaratildi!")
     except Exception as e:
-        logging.error(f"❌ Statistika baza xato: {e}")
+        logging.error(f"❌ stats.db xato: {e}")
 
     # 3. Adminlarga xabar yuborish
     for admin_id in ADMINS:

@@ -1,24 +1,27 @@
+# utils/db_api/database.py - TO'LIQ VERSIYA
 import sqlite3
 import os
 import re
 from datetime import datetime
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(BASE_DIR, "data", "iphone_bot.db")
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DB_PATH = os.path.join(BASE_DIR, "data", "phones.db")
 
 
 def get_conn():
+    """Database ulanishini yaratish"""
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
 
 def init_db():
+    """Asosiy database yaratish - NARXLAR"""
     conn = get_conn()
     c = conn.cursor()
 
-    # Models
+    # MODELS jadvali
     c.execute('''
         CREATE TABLE IF NOT EXISTS models (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -29,7 +32,7 @@ def init_db():
         )
     ''')
 
-    # Storages
+    # STORAGES jadvali
     c.execute('''
         CREATE TABLE IF NOT EXISTS storages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,7 +45,7 @@ def init_db():
         )
     ''')
 
-    # Colors
+    # COLORS jadvali
     c.execute('''
         CREATE TABLE IF NOT EXISTS colors (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,7 +58,7 @@ def init_db():
         )
     ''')
 
-    # Batteries
+    # BATTERIES jadvali
     c.execute('''
         CREATE TABLE IF NOT EXISTS batteries (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,7 +73,7 @@ def init_db():
         )
     ''')
 
-    # SIM turlari
+    # SIM_TYPES jadvali
     c.execute('''
         CREATE TABLE IF NOT EXISTS sim_types (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,7 +85,7 @@ def init_db():
         )
     ''')
 
-    # Replaced parts (alohida qismlar uchun jadval)
+    # PARTS jadvali
     c.execute('''
         CREATE TABLE IF NOT EXISTS parts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -94,7 +97,7 @@ def init_db():
         )
     ''')
 
-    # Prices - Asosiy jadval
+    # PRICES jadvali
     c.execute('''
         CREATE TABLE IF NOT EXISTS prices (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,23 +116,24 @@ def init_db():
         )
     ''')
 
-    # Indexlar
+    # Indekslar
     c.execute('CREATE INDEX IF NOT EXISTS idx_prices_model ON prices(model_id)')
     c.execute(
         'CREATE INDEX IF NOT EXISTS idx_prices_lookup ON prices(model_id, storage_size, color_name, sim_type, battery_label, has_box, damage_pct)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_models_active ON models(is_active)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_storages_model ON storages(model_id)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_colors_model ON colors(model_id)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_batteries_model ON batteries(model_id)')
 
     conn.commit()
     conn.close()
+    print("✅ phones.db yaratildi (narxlar)")
 
 
-# ============= NORMALIZE FUNKSIYALARI - TO'G'RILANGAN =============
+# ============= NORMALIZE FUNKSIYALARI =============
 
 def normalize_damage_format(damage_text):
-    """
-    Damage textini normallashtirish - Bot formatiga
-    Input: har qanday format
-    Output: bot formati (battery, screen, glass, body, etc.)
-    """
+    """Damage textini normallashtirish - Bot formatiga"""
     if not damage_text:
         return "Yangi"
 
@@ -206,9 +210,7 @@ def normalize_damage_format(damage_text):
 
 
 def normalize_for_search(damage_text):
-    """
-    Qidirish uchun damage textini normallashtirish
-    """
+    """Qidirish uchun damage textini normallashtirish"""
     if not damage_text:
         return "yangi"
 
@@ -228,53 +230,156 @@ def normalize_for_search(damage_text):
     return normalized.lower()
 
 
-# ===================== ASOSIY FUNKSIYALAR =====================
+# ===================== MODEL FUNKSIYALARI =====================
 
 def get_models():
+    """Barcha faol modellarni olish"""
     conn = get_conn()
     c = conn.cursor()
-    c.execute("SELECT id, name FROM models WHERE is_active = 1 ORDER BY order_num, name")
+    c.execute("SELECT * FROM models WHERE is_active = 1 ORDER BY order_num, name")
     rows = c.fetchall()
     conn.close()
     return [dict(row) for row in rows]
 
+
+def get_model(model_id):
+    """Bitta modelni olish"""
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT * FROM models WHERE id = ?", (model_id,))
+    row = c.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def add_model(name, order_num=0):
+    """Model qo'shish"""
+    conn = get_conn()
+    c = conn.cursor()
+    try:
+        c.execute("INSERT OR IGNORE INTO models (name, order_num) VALUES (?, ?)", (name, order_num))
+        c.execute("SELECT id FROM models WHERE name = ?", (name,))
+        row = c.fetchone()
+        model_id = row['id'] if row else None
+        conn.commit()
+        return model_id
+    except Exception as e:
+        print(f"Model qo'shishda xato: {e}")
+        return None
+    finally:
+        conn.close()
+
+
+# ===================== STORAGE FUNKSIYALARI =====================
 
 def get_storages(model_id):
+    """Model uchun barcha xotiralarni olish"""
     conn = get_conn()
     c = conn.cursor()
-    c.execute("SELECT size FROM storages WHERE model_id = ?", (model_id,))
+    c.execute("SELECT * FROM storages WHERE model_id = ? ORDER BY size", (model_id,))
     rows = c.fetchall()
     conn.close()
     return [dict(row) for row in rows]
 
 
-def get_colors(model_id):
+def add_storage(model_id, size):
+    """Xotira qo'shish"""
     conn = get_conn()
     c = conn.cursor()
-    c.execute("SELECT name FROM colors WHERE model_id = ?", (model_id,))
+    try:
+        c.execute("INSERT OR IGNORE INTO storages (model_id, size) VALUES (?, ?)", (model_id, size))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Xotira qo'shishda xato: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+# ===================== COLOR FUNKSIYALARI =====================
+
+def get_colors(model_id):
+    """Model uchun barcha ranglarni olish"""
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT * FROM colors WHERE model_id = ? ORDER BY name", (model_id,))
     rows = c.fetchall()
     conn.close()
     return [dict(row) for row in rows] if rows else [{"name": "Standart"}]
 
 
-def get_batteries(model_id):
+def add_color(model_id, name):
+    """Rang qo'shish"""
     conn = get_conn()
     c = conn.cursor()
-    c.execute("SELECT label FROM batteries WHERE model_id = ?", (model_id,))
+    try:
+        c.execute("INSERT OR IGNORE INTO colors (model_id, name) VALUES (?, ?)", (model_id, name))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Rang qo'shishda xato: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+# ===================== BATTERY FUNKSIYALARI =====================
+
+def get_batteries(model_id):
+    """Model uchun barcha batareyalarni olish"""
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT * FROM batteries WHERE model_id = ? ORDER BY min_percent DESC", (model_id,))
     rows = c.fetchall()
     conn.close()
     return [dict(row) for row in rows] if rows else [{"label": "100%"}]
 
 
-def get_sim_types(model_id):
+def add_battery(model_id, label):
+    """Batareya qo'shish"""
     conn = get_conn()
     c = conn.cursor()
-    c.execute("SELECT type FROM sim_types WHERE model_id = ?", (model_id,))
+    try:
+        c.execute("INSERT OR IGNORE INTO batteries (model_id, label) VALUES (?, ?)", (model_id, label))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Batareya qo'shishda xato: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+# ===================== SIM TYPE FUNKSIYALARI =====================
+
+def get_sim_types(model_id):
+    """Model uchun SIM turlarini olish"""
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT * FROM sim_types WHERE model_id = ?", (model_id,))
     rows = c.fetchall()
     conn.close()
     types = [dict(row)['type'] for row in rows]
     return [{"type": t} for t in types] if types else [{"type": "physical"}]
 
+
+def add_sim_type(model_id, sim_type):
+    """SIM turi qo'shish"""
+    conn = get_conn()
+    c = conn.cursor()
+    try:
+        c.execute("INSERT OR IGNORE INTO sim_types (model_id, type) VALUES (?, ?)", (model_id, sim_type))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"SIM turi qo'shishda xato: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+# ===================== PARTS FUNKSIYALARI =====================
 
 def get_parts_for_model(model_id):
     """Model uchun alohida qismlarni olish"""
@@ -286,10 +391,27 @@ def get_parts_for_model(model_id):
     return [dict(row)['part_name'] for row in rows]
 
 
+def add_part(model_id, part_name):
+    """Alohida qism qo'shish - bot formatida"""
+    conn = get_conn()
+    c = conn.cursor()
+    try:
+        # Normalize qilamiz (bot formatiga)
+        normalized_part = normalize_damage_format(part_name)
+        c.execute("INSERT OR IGNORE INTO parts (model_id, part_name) VALUES (?, ?)", (model_id, normalized_part))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Qism qo'shishda xato: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+# ===================== PRICE FUNKSIYALARI =====================
+
 def get_price(model_id, storage, color, sim_type, battery, has_box, damage):
-    """
-    ⚡ SUPER DEBUG VERSION - aniq qidirish
-    """
+    """Narxni olish - DEBUG VERSION"""
     conn = get_conn()
     c = conn.cursor()
 
@@ -309,45 +431,9 @@ def get_price(model_id, storage, color, sim_type, battery, has_box, damage):
     # Qidirish formati
     search_damage = normalize_for_search(damage_pct)
 
-    print(f"\n{'=' * 70}")
-    print(f"🔍 GET_PRICE DEBUG:")
-    print(f"{'=' * 70}")
-    print(f"📥 INPUT:")
-    print(f"   Model ID: {model_id}")
-    print(f"   Storage: {storage}")
-    print(f"   Color: '{color}' → '{color_name}'")
-    print(f"   SIM: {sim_type}")
-    print(f"   Battery: {battery}")
-    print(f"   Has Box: {has_box} → {has_box_int}")
-    print(f"   Damage: '{damage}' → normalized: '{damage_pct}' → search: '{search_damage}'")
-
-    # 1. BAZADAGI BARCHA VARIANTLARNI KO'RISH
-    print(f"\n📊 BAZADAGI BARCHA VARIANTLAR (model={model_id}):")
+    # ANIQ QIDIRISH
     c.execute("""
-        SELECT id, storage_size, color_name, sim_type, battery_label, has_box, damage_pct, price
-        FROM prices 
-        WHERE model_id = ?
-        LIMIT 10
-    """, (model_id,))
-
-    all_in_db = c.fetchall()
-    if all_in_db:
-        for row in all_in_db:
-            print(f"   ID={row['id']}: storage={row['storage_size']}, color='{row['color_name']}', "
-                  f"sim={row['sim_type']}, battery={row['battery_label']}, "
-                  f"box={row['has_box']}, damage='{row['damage_pct']}', price=${row['price']}")
-    else:
-        print("   ❌ BAZADA HECH NARSA YO'Q!")
-        conn.close()
-        return None
-
-    # 2. ANIQ PARAMETRLAR BILAN QIDIRISH
-    print(f"\n🎯 QIDIRILMOQDA (aniq parametrlar):")
-    print(f"   model_id={model_id}, storage={storage}, color='{color_name}'")
-    print(f"   sim={sim_type}, battery={battery}, box={has_box_int}, damage='{search_damage}'")
-
-    c.execute("""
-        SELECT id, price, damage_pct FROM prices 
+        SELECT price, damage_pct FROM prices 
         WHERE model_id = ? 
         AND storage_size = ? 
         AND color_name = ? 
@@ -359,155 +445,45 @@ def get_price(model_id, storage, color, sim_type, battery, has_box, damage):
     matching_rows = c.fetchall()
 
     if matching_rows:
-        print(f"   ✅ {len(matching_rows)} ta mos keluvchi variant topildi:")
         for row in matching_rows:
             db_damage = row['damage_pct']
             normalized_db_damage = normalize_for_search(db_damage)
-            match = "✅ MOS!" if normalized_db_damage == search_damage else "❌"
-            print(
-                f"      ID={row['id']}: damage='{db_damage}' → search='{normalized_db_damage}' {match} price=${row['price']}")
 
             if normalized_db_damage == search_damage:
-                print(f"\n🎉 TOPILDI! ID={row['id']}, Price=${row['price']}")
                 conn.close()
                 return row['price']
-    else:
-        print(f"   ❌ Hech narsa topilmadi")
-
-    # 3. DAMAGE NI HISOBGA OLMAY QIDIRISH
-    print(f"\n🔄 DAMAGE NI HISOBGA OLMAY QIDIRISH:")
-    c.execute("""
-        SELECT id, damage_pct, price FROM prices 
-        WHERE model_id = ? 
-        AND storage_size = ? 
-        AND color_name = ? 
-        AND sim_type = ? 
-        AND battery_label = ? 
-        AND has_box = ?
-    """, (model_id, storage, color_name, sim_type, battery, has_box_int))
-
-    rows = c.fetchall()
-    if rows:
-        print(f"   Topildi {len(rows)} ta variant (damage turlicha):")
-        for row in rows:
-            print(f"      ID={row['id']}: damage='{row['damage_pct']}', price=${row['price']}")
-    else:
-        print(f"   ❌ Hech narsa yo'q")
-
-    # 4. QUTI NI HISOBGA OLMAY QIDIRISH
-    print(f"\n🔄 QUTI NI HISOBGA OLMAY QIDIRISH:")
-    c.execute("""
-        SELECT id, has_box, damage_pct, price FROM prices 
-        WHERE model_id = ? 
-        AND storage_size = ? 
-        AND color_name = ? 
-        AND sim_type = ? 
-        AND battery_label = ?
-    """, (model_id, storage, color_name, sim_type, battery))
-
-    rows = c.fetchall()
-    if rows:
-        print(f"   Topildi {len(rows)} ta variant:")
-        for row in rows:
-            print(f"      ID={row['id']}: box={row['has_box']}, damage='{row['damage_pct']}', price=${row['price']}")
-    else:
-        print(f"   ❌ Hech narsa yo'q")
-
-    print(f"\n❌ NARX TOPILMADI!")
-    print(f"{'=' * 70}\n")
 
     conn.close()
     return None
 
 
-def add_model(name, order_num=0):
+def get_prices_for_model(model_id):
+    """Model uchun barcha narxlarni olish"""
     conn = get_conn()
+    conn.row_factory = sqlite3.Row
     c = conn.cursor()
+    c.execute("""
+        SELECT * FROM prices 
+        WHERE model_id=? 
+        ORDER BY price DESC 
+        LIMIT 100
+    """, (model_id,))
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+
+def get_total_prices_count():
+    """Bazadagi jami narxlar soni"""
     try:
-        c.execute("INSERT OR IGNORE INTO models (name, order_num) VALUES (?, ?)", (name, order_num))
-        c.execute("SELECT id FROM models WHERE name = ?", (name,))
-        row = c.fetchone()
-        model_id = row['id'] if row else None
-        conn.commit()
-        return model_id
-    except Exception as e:
-        print(f"Model qo'shishda xato: {e}")
-        return None
-    finally:
+        conn = get_conn()
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) as count FROM prices")
+        count = c.fetchone()['count']
         conn.close()
-
-
-def add_storage(model_id, size):
-    conn = get_conn()
-    c = conn.cursor()
-    try:
-        c.execute("INSERT OR IGNORE INTO storages (model_id, size) VALUES (?, ?)", (model_id, size))
-        conn.commit()
-        return True
-    except Exception as e:
-        print(f"Xotira qo'shishda xato: {e}")
-        return False
-    finally:
-        conn.close()
-
-
-def add_color(model_id, name):
-    conn = get_conn()
-    c = conn.cursor()
-    try:
-        c.execute("INSERT OR IGNORE INTO colors (model_id, name) VALUES (?, ?)", (model_id, name))
-        conn.commit()
-        return True
-    except Exception as e:
-        print(f"Rang qo'shishda xato: {e}")
-        return False
-    finally:
-        conn.close()
-
-
-def add_battery(model_id, label):
-    conn = get_conn()
-    c = conn.cursor()
-    try:
-        c.execute("INSERT OR IGNORE INTO batteries (model_id, label) VALUES (?, ?)", (model_id, label))
-        conn.commit()
-        return True
-    except Exception as e:
-        print(f"Batareya qo'shishda xato: {e}")
-        return False
-    finally:
-        conn.close()
-
-
-def add_sim_type(model_id, sim_type):
-    conn = get_conn()
-    c = conn.cursor()
-    try:
-        c.execute("INSERT OR IGNORE INTO sim_types (model_id, type) VALUES (?, ?)", (model_id, sim_type))
-        conn.commit()
-        return True
-    except Exception as e:
-        print(f"SIM turi qo'shishda xato: {e}")
-        return False
-    finally:
-        conn.close()
-
-
-def add_part(model_id, part_name):
-    """Alohida qism qo'shish - bot formatida"""
-    conn = get_conn()
-    c = conn.cursor()
-    try:
-        # Normalize qilamiz (bot formatiga)
-        normalized_part = normalize_damage_format(part_name)
-        c.execute("INSERT OR IGNORE INTO parts (model_id, part_name) VALUES (?, ?)", (model_id, normalized_part))
-        conn.commit()
-        return True
-    except Exception as e:
-        print(f"Qism qo'shishda xato: {e}")
-        return False
-    finally:
-        conn.close()
+        return count
+    except:
+        return 0
 
 
 def add_price_record(model_id, storage, color, sim_type, battery, has_box, damage, price):
@@ -542,35 +518,13 @@ def add_price_record(model_id, storage, color, sim_type, battery, has_box, damag
         conn.close()
 
 
-def get_total_prices_count():
-    conn = get_conn()
-    c = conn.cursor()
-    c.execute("SELECT COUNT(*) as count FROM prices")
-    row = c.fetchone()
-    conn.close()
-    return row['count'] if row else 0
-
-
-def get_prices_for_model(model_id):
-    conn = get_conn()
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("""
-        SELECT * FROM prices 
-        WHERE model_id=? 
-        ORDER BY price DESC 
-        LIMIT 5
-    """, (model_id,))
-    rows = c.fetchall()
-    conn.close()
-    return rows
-
-
 def clear_all_prices():
+    """Narxlarni tozalash"""
     conn = get_conn()
     c = conn.cursor()
     try:
         c.execute("DELETE FROM prices")
+        c.execute("DELETE FROM parts")
         conn.commit()
         return True
     except Exception as e:
@@ -580,5 +534,6 @@ def clear_all_prices():
         conn.close()
 
 
-# Boshida avto yaratish
-init_db()
+# Avtomatik ishga tushirish
+if __name__ != "__main__":
+    init_db()

@@ -25,7 +25,7 @@ from utils.db_api.stats_database import (
     add_or_update_user, save_price_inquiry, register_user,
     is_user_registered, get_user_stats, get_global_stats,
     get_all_users, get_total_users, get_registered_users_count,
-    get_active_users
+    get_active_users, get_total_price_inquiries
 )
 from data.config import ADMINS, START_PHOTO_FILE_ID
 
@@ -726,6 +726,8 @@ async def parts_callback(call: types.CallbackQuery, state: FSMContext):
 
 
 # === YAKUNIY NARX ===
+from datetime import datetime
+
 async def show_final_price(message: types.Message, state: FSMContext):
     data = await state.get_data()
     selected = data.get('selected_parts', [])
@@ -736,7 +738,10 @@ async def show_final_price(message: types.Message, state: FSMContext):
         damage_display = "Yangi"
     else:
         damage_pct = "+".join(sorted(selected))
-        damage_display = data.get('damage_display', " + ".join([PARTS[k] for k in sorted(selected)]))
+        damage_display = data.get(
+            'damage_display',
+            " + ".join([PARTS[k] for k in sorted(selected)])
+        )
 
     # Narx olish
     price = get_price(
@@ -748,6 +753,9 @@ async def show_final_price(message: types.Message, state: FSMContext):
         has_box=data['has_box'],
         damage=damage_pct
     )
+
+    # Sana va vaqt
+    now = datetime.now().strftime("%d.%m.%Y %H:%M")
 
     # Statistika
     if price:
@@ -772,30 +780,38 @@ async def show_final_price(message: types.Message, state: FSMContext):
     else:
         price_text = "❌ Topilmadi"
 
-    # Xabar
+    # Yakuniy xabar
     text = f"""\
-📊 <b>HISOBLASH NATIJASI:</b>
+📊 <b>HISOBLASH NATIJASI</b>
 
 📱 <b>Model:</b> {data['model_name']}
 💾 <b>Xotira:</b> {data['storage']}
 🎨 <b>Rang:</b> {color or 'Standart'}
 📞 <b>SIM:</b> {'📲 eSIM' if data['sim_type'] == 'esim' else '📱 SIM karta'}
 🔋 <b>Batareya:</b> {data['battery']}
-📦 <b>Quti:</b> {'✅ Bor' if data['has_box'] == 'Bor' else '❌ Yoq'}
+📦 <b>Quti:</b> {'✅ Bor' if data['has_box'] == 'Bor' else '❌ Yo‘q'}
 🔧 <b>Holat:</b> {damage_display}
 
-💰 <b>TAXMINIY NARX:</b> {price_text}
+💰 {price_text}
+
+🕒 <b>Hisoblangan vaqt:</b> {now}
     """.strip()
 
-    # Yakuniy klaviatura (2 qatordan)
+    # Tugmalar
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.row(
         KeyboardButton("🔄 Yana hisoblash"),
         KeyboardButton("🏠 Bosh menyu")
     )
 
-    await message.answer(text, reply_markup=kb, parse_mode="HTML")
+    await message.answer(
+        text,
+        reply_markup=kb,
+        parse_mode="HTML",
+        disable_web_page_preview=True
+    )
     await state.finish()
+
 
 
 # === YANA HISOBLASH ===
@@ -834,80 +850,146 @@ async def admin_panel(message: types.Message):
     await message.answer(text, reply_markup=admin_kb(), parse_mode="HTML")
 
 
-# === STATISTIKA ===
+# === STATISTIKA === (start.py dagi 📊 Statistika handlerini almashtiring)
+
 @dp.message_handler(lambda m: m.text == "📊 Statistika" and m.from_user.id in ADMINS)
 async def admin_statistics(message: types.Message):
     try:
-        # 1. Umumiy statistika
-        models_count = len(get_models())
-        prices_count = get_total_prices_count()
-        total_users = get_total_users()
-        registered_users = get_registered_users_count()
-        active_users_today = get_active_users(1)
-        active_users_week = get_active_users(7)
-        active_users_month = get_active_users(30)
+        progress_msg = await message.answer("⏳ Statistika tayyorlanmoqda...")
 
-        # 2. Global statistika (har xil davrlar uchun)
-        today_stats = get_global_stats('today')
-        week_stats = get_global_stats('week')
-        month_stats = get_global_stats('month')
-        all_stats = get_global_stats('all')
+        # 1. Asosiy raqamlar
+        try:
+            models_count = len(get_models())
+        except:
+            models_count = 0
 
-        # 3. Eng ko'p narxlatilgan 3 ta model
-        top_models = all_stats.get('top_models', [])[:3] if all_stats else []
+        try:
+            prices_count = get_total_prices_count()
+        except:
+            prices_count = 0
 
-        text = f"""\
-<b>📊 ADMIN STATISTIKA</b>
+        try:
+            total_users = get_total_users()
+        except Exception as e:
+            print(f"total_users xato: {e}")
+            total_users = 0
+
+        try:
+            registered_users = get_registered_users_count()
+        except Exception as e:
+            print(f"registered_users xato: {e}")
+            registered_users = 0
+
+        try:
+            active_users_today = get_active_users(1)
+        except Exception as e:
+            print(f"active_users_today xato: {e}")
+            active_users_today = 0
+
+        try:
+            active_users_week = get_active_users(7)
+        except Exception as e:
+            print(f"active_users_week xato: {e}")
+            active_users_week = 0
+
+        try:
+            active_users_month = get_active_users(30)
+        except Exception as e:
+            print(f"active_users_month xato: {e}")
+            active_users_month = 0
+
+        # 2. Global statistika
+        try:
+            today_stats = get_global_stats('today')
+        except Exception as e:
+            print(f"today_stats xato: {e}")
+            today_stats = {'total_inquiries': 0, 'active_users': 0, 'unique_models': 0}
+
+        try:
+            week_stats = get_global_stats('week')
+        except Exception as e:
+            print(f"week_stats xato: {e}")
+            week_stats = {'total_inquiries': 0, 'active_users': 0, 'unique_models': 0}
+
+        try:
+            month_stats = get_global_stats('month')
+        except Exception as e:
+            print(f"month_stats xato: {e}")
+            month_stats = {'total_inquiries': 0, 'active_users': 0, 'unique_models': 0}
+
+        try:
+            all_stats = get_global_stats('all')
+        except Exception as e:
+            print(f"all_stats xato: {e}")
+            all_stats = {'total_inquiries': 0, 'top_models': [], 'top_users': []}
+
+        # 3. Jami narxlatishlar (price_history jadvalidan)
+        try:
+            total_price_inquiries = get_total_price_inquiries()
+        except:
+            total_price_inquiries = 0
+
+        text = f"""<b>📊 ADMIN STATISTIKA</b>
 
 <b>👥 FOYDALANUVCHILAR:</b>
-- 👤 Jami foydalanuvchi: {total_users} ta
-- ✅ Ro'yxatdan o'tgan: {registered_users} ta
-- 🔥 Faol (bugun): {active_users_today} ta
-- 🔥 Faol (hafta): {active_users_week} ta
-- 🔥 Faol (oy): {active_users_month} ta
+• Jami: <b>{total_users}</b> ta
+• Ro'yxatdan o'tgan: <b>{registered_users}</b> ta
+• Faol (bugun): <b>{active_users_today}</b> ta
+• Faol (hafta): <b>{active_users_week}</b> ta
+• Faol (oy): <b>{active_users_month}</b> ta
 
 <b>📈 NARXLATISH STATISTIKASI:</b>
-- 📊 Bugungi narxlar: {today_stats.get('total_inquiries', 0) if today_stats else 0} ta
-- 📊 Haftalik narxlar: {week_stats.get('total_inquiries', 0) if week_stats else 0} ta
-- 📊 Oylik narxlar: {month_stats.get('total_inquiries', 0) if month_stats else 0} ta
-- 📊 Jami narxlar: {all_stats.get('total_inquiries', 0) if all_stats else 0} ta
+• Bugungi: <b>{today_stats.get('total_inquiries', 0)}</b> ta
+• Haftalik: <b>{week_stats.get('total_inquiries', 0)}</b> ta
+• Oylik: <b>{month_stats.get('total_inquiries', 0)}</b> ta
+• Jami: <b>{total_price_inquiries}</b> ta
 
-<b>📱 MODELLAR:</b>
-- 📱 Jami modellar: {models_count} ta
-- 💰 Jami narxlar: {prices_count} ta
-
-<b>🏆 ENG KO'P NARXLATILGAN 3 TA MODEL:</b>
+<b>📱 MODELLAR VA NARXLAR:</b>
+• Modellar: <b>{models_count}</b> ta
+• Narxlar (bazada): <b>{prices_count}</b> ta
 """
 
+        # 4. TOP 3 modellar
+        top_models = all_stats.get('top_models', [])[:3]
         if top_models:
+            text += f"\n<b>🏆 ENG KO'P NARXLATILGAN (TOP 3):</b>\n"
             for i, model in enumerate(top_models, 1):
                 model_name = model.get('model_name', 'Noma\'lum')
                 count = model.get('count', 0)
-                text += f"{i}. {model_name}: {count} marta\n"
+                text += f"{i}. {model_name}: <b>{count}</b> marta\n"
         else:
-            text += "Hali ma'lumot yo'q\n"
+            text += "\n<b>🏆 ENG KO'P NARXLATILGAN:</b>\nHali ma'lumot yo'q\n"
 
-        # 4. Bugungi eng faol foydalanuvchilar
-        if today_stats and 'top_users' in today_stats and today_stats['top_users']:
-            text += f"\n<b>⭐ BUGUNGI ENG FAOL (TOP 3):</b>\n"
-            for i, user in enumerate(today_stats['top_users'][:3], 1):
+        # 5. Bugungi TOP 3 foydalanuvchilar
+        today_top_users = today_stats.get('top_users', [])[:3] if today_stats else []
+        if today_top_users:
+            text += f"\n<b>⭐ BUGUNGI FAOL (TOP 3):</b>\n"
+            for i, user in enumerate(today_top_users, 1):
                 username = user.get('username') or user.get('first_name', 'Foydalanuvchi')
                 count = user.get('count', 0)
-                text += f"{i}. {username}: {count} marta\n"
+                # Username bo'lsa @ bilan, aks holda ismni ko'rsat
+                display_name = f"@{username}" if user.get('username') else username
+                text += f"{i}. {display_name}: <b>{count}</b> marta\n"
 
-        # 5. Haftalik statistika
-        if week_stats:
-            text += f"\n<b>📅 HAFTALIK STATISTIKA:</b>\n"
-            text += f"- Faol foydalanuvchilar: {week_stats.get('active_users', 0)} ta\n"
-            text += f"- Narxlar soni: {week_stats.get('total_inquiries', 0)} ta\n"
-            text += f"- Faol modellar: {week_stats.get('unique_models', 0)} ta\n"
+        # 6. Haftalik umumiy statistika
+        text += f"\n<b>📅 HAFTALIK STATISTIKA:</b>\n"
+        text += f"• Faol foydalanuvchilar: <b>{week_stats.get('active_users', 0)}</b> ta\n"
+        text += f"• Narxlar soni: <b>{week_stats.get('total_inquiries', 0)}</b> ta\n"
+        text += f"• Faol modellar: <b>{week_stats.get('unique_models', 0)}</b> ta\n"
 
-        text += f"\n<b>🕐 Yangilangan:</b> {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        # 7. Vaqt markeri
+        now = datetime.now()
+        text += f"\n<b>🕐 Yangilangan:</b> {now.strftime('%d.%m.%Y %H:%M')}"
 
-        await message.answer(text, parse_mode="HTML")
+        await progress_msg.edit_text(text, parse_mode="HTML")
 
     except Exception as e:
-        await message.answer(f"❌ Statistika olishda xato: {str(e)[:200]}")
+        error_text = f"❌ Statistika olishda xato:\n<code>{str(e)[:300]}</code>"
+        try:
+            await message.answer(error_text, parse_mode="HTML")
+        except:
+            await message.answer(f"❌ Statistika olishda xato: {str(e)[:100]}")
+
         traceback.print_exc()
 
 
