@@ -726,6 +726,8 @@ async def parts_callback(call: types.CallbackQuery, state: FSMContext):
 
 
 # === YAKUNIY NARX ===
+from datetime import datetime
+
 async def show_final_price(message: types.Message, state: FSMContext):
     data = await state.get_data()
     selected = data.get('selected_parts', [])
@@ -733,10 +735,13 @@ async def show_final_price(message: types.Message, state: FSMContext):
 
     if not selected:
         damage_pct = "Yangi"
-        damage_display = "Yangi"
+        damage_display = "Ideal"
     else:
         damage_pct = "+".join(sorted(selected))
-        damage_display = data.get('damage_display', " + ".join([PARTS[k] for k in sorted(selected)]))
+        damage_display = data.get(
+            'damage_display',
+            " + ".join([PARTS[k] for k in sorted(selected)])
+        )
 
     # Narx olish
     price = get_price(
@@ -748,6 +753,9 @@ async def show_final_price(message: types.Message, state: FSMContext):
         has_box=data['has_box'],
         damage=damage_pct
     )
+
+    # Sana va vaqt
+    now = datetime.now().strftime("%d.%m.%Y %H:%M")
 
     # Statistika
     if price:
@@ -772,30 +780,38 @@ async def show_final_price(message: types.Message, state: FSMContext):
     else:
         price_text = "❌ Topilmadi"
 
-    # Xabar
+    # Yakuniy xabar
     text = f"""\
-📊 <b>HISOBLASH NATIJASI:</b>
+📊 <b>HISOBLASH NATIJASI</b>
 
 📱 <b>Model:</b> {data['model_name']}
 💾 <b>Xotira:</b> {data['storage']}
 🎨 <b>Rang:</b> {color or 'Standart'}
 📞 <b>SIM:</b> {'📲 eSIM' if data['sim_type'] == 'esim' else '📱 SIM karta'}
 🔋 <b>Batareya:</b> {data['battery']}
-📦 <b>Quti:</b> {'✅ Bor' if data['has_box'] == 'Bor' else '❌ Yoq'}
+📦 <b>Quti:</b> {'✅ Bor' if data['has_box'] == 'Bor' else '❌ Yo‘q'}
 🔧 <b>Holat:</b> {damage_display}
 
-💰 <b>TAXMINIY NARX:</b> {price_text}
+💰 {price_text}
+
+🕒 <b>Hisoblangan vaqt:</b> {now}
     """.strip()
 
-    # Yakuniy klaviatura (2 qatordan)
+    # Tugmalar
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.row(
         KeyboardButton("🔄 Yana hisoblash"),
         KeyboardButton("🏠 Bosh menyu")
     )
 
-    await message.answer(text, reply_markup=kb, parse_mode="HTML")
+    await message.answer(
+        text,
+        reply_markup=kb,
+        parse_mode="HTML",
+        disable_web_page_preview=True
+    )
     await state.finish()
+
 
 
 # === YANA HISOBLASH ===
