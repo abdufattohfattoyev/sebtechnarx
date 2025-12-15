@@ -1,4 +1,4 @@
-# docker-compose.yml
+# docker-compose.yml - MA'LUMOTLARNI SAQLASH UCHUN TO'G'RILANGAN
 version: '3.8'
 
 services:
@@ -10,5 +10,19 @@ services:
     environment:
       - BOT_TOKEN=${BOT_TOKEN}
     volumes:
+      # ✅ DATA PAPKASINI HOST MASHINAGA BOG'LASH (Ma'lumotlar saqlanadi)
       - ./data:/app/data
+      # ✅ Logs uchun ham volume (ixtiyoriy)
+      - ./logs:/app/logs
     restart: unless-stopped
+
+    # ✅ Container to'xtaganda ham ma'lumotlarni saqlash
+    stop_grace_period: 10s
+
+    # ✅ Xotira limitlari (ixtiyoriy)
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
