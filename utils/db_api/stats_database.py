@@ -221,20 +221,20 @@ def get_user_stats(user_id, period='all'):
     # Vaqt filtri
     date_filter = ""
     if period == 'today':
-        date_filter = f"AND DATE(created_at) = DATE('now')"
+        date_filter = f"AND DATE(ph.created_at) = DATE('now')"
     elif period == 'week':
-        date_filter = f"AND created_at >= DATE('now', '-7 days')"
+        date_filter = f"AND ph.created_at >= DATE('now', '-7 days')"
     elif period == 'month':
-        date_filter = f"AND created_at >= DATE('now', '-30 days')"
+        date_filter = f"AND ph.created_at >= DATE('now', '-30 days')"
 
     # Umumiy statistika
     c.execute(f"""
         SELECT 
             COUNT(*) as total_inquiries,
-            COUNT(DISTINCT model_name) as unique_models,
-            COUNT(DISTINCT DATE(created_at)) as active_days
-        FROM price_history 
-        WHERE user_id = ? {date_filter}
+            COUNT(DISTINCT ph.model_name) as unique_models,
+            COUNT(DISTINCT DATE(ph.created_at)) as active_days
+        FROM price_history ph
+        WHERE ph.user_id = ? {date_filter}
     """, (db_user_id,))
 
     stats = dict(c.fetchone())
@@ -242,11 +242,11 @@ def get_user_stats(user_id, period='all'):
     # Eng ko'p narxlatilgan modellar (TOP 5)
     c.execute(f"""
         SELECT 
-            model_name,
+            ph.model_name,
             COUNT(*) as count
-        FROM price_history 
-        WHERE user_id = ? {date_filter}
-        GROUP BY model_name
+        FROM price_history ph
+        WHERE ph.user_id = ? {date_filter}
+        GROUP BY ph.model_name
         ORDER BY count DESC
         LIMIT 5
     """, (db_user_id,))
@@ -266,20 +266,22 @@ def get_global_stats(period='all'):
 
     # Vaqt filtri
     date_filter = ""
+    params = []
+
     if period == 'today':
-        date_filter = f"WHERE DATE(created_at) = DATE('now')"
+        date_filter = "WHERE DATE(ph.created_at) = DATE('now')"
     elif period == 'week':
-        date_filter = f"WHERE created_at >= DATE('now', '-7 days')"
+        date_filter = "WHERE ph.created_at >= DATE('now', '-7 days')"
     elif period == 'month':
-        date_filter = f"WHERE created_at >= DATE('now', '-30 days')"
+        date_filter = "WHERE ph.created_at >= DATE('now', '-30 days')"
 
     # Umumiy statistika
     c.execute(f"""
         SELECT 
             COUNT(*) as total_inquiries,
-            COUNT(DISTINCT user_id) as active_users,
-            COUNT(DISTINCT model_name) as unique_models
-        FROM price_history 
+            COUNT(DISTINCT ph.user_id) as active_users,
+            COUNT(DISTINCT ph.model_name) as unique_models
+        FROM price_history ph
         {date_filter}
     """)
 
@@ -288,18 +290,21 @@ def get_global_stats(period='all'):
     # TOP modellar
     c.execute(f"""
         SELECT 
-            model_name,
+            ph.model_name,
             COUNT(*) as count
-        FROM price_history 
+        FROM price_history ph
         {date_filter}
-        GROUP BY model_name
+        GROUP BY ph.model_name
         ORDER BY count DESC
         LIMIT 10
     """)
 
     stats['top_models'] = [dict(row) for row in c.fetchall()]
 
-    # TOP foydalanuvchilar
+    # TOP foydalanuvchilar - TO'G'RILANGAN
+    # WHERE shartida ph.created_at ishlatish kerak
+    where_clause = date_filter if date_filter else ""
+
     c.execute(f"""
         SELECT 
             u.username,
@@ -307,8 +312,8 @@ def get_global_stats(period='all'):
             COUNT(ph.id) as count
         FROM price_history ph
         JOIN users u ON ph.user_id = u.id
-        {date_filter}
-        GROUP BY ph.user_id
+        {where_clause}
+        GROUP BY ph.user_id, u.username, u.first_name
         ORDER BY count DESC
         LIMIT 10
     """)
@@ -347,9 +352,16 @@ def get_total_users():
     """Jami foydalanuvchilar soni"""
     conn = get_conn()
     c = conn.cursor()
-    c.execute("SELECT COUNT(*) as count FROM users")
-    count = c.fetchone()['count']
-    conn.close()
+
+    try:
+        c.execute("SELECT COUNT(*) as count FROM users")
+        count = c.fetchone()['count']
+    except Exception as e:
+        print(f"get_total_users xato: {e}")
+        count = 0
+    finally:
+        conn.close()
+
     return count
 
 
@@ -357,9 +369,16 @@ def get_registered_users_count():
     """Ro'yxatdan o'tgan foydalanuvchilar soni"""
     conn = get_conn()
     c = conn.cursor()
-    c.execute("SELECT COUNT(*) as count FROM users WHERE is_registered = 1")
-    count = c.fetchone()['count']
-    conn.close()
+
+    try:
+        c.execute("SELECT COUNT(*) as count FROM users WHERE is_registered = 1 AND phone_number IS NOT NULL")
+        count = c.fetchone()['count']
+    except Exception as e:
+        print(f"get_registered_users_count xato: {e}")
+        count = 0
+    finally:
+        conn.close()
+
     return count
 
 
@@ -367,14 +386,95 @@ def get_active_users(days=7):
     """Faol foydalanuvchilar soni (oxirgi N kun)"""
     conn = get_conn()
     c = conn.cursor()
-    c.execute("""
-        SELECT COUNT(*) as count 
-        FROM users 
-        WHERE last_active >= DATE('now', ? || ' days')
-    """, (f'-{days}',))
-    count = c.fetchone()['count']
-    conn.close()
+
+    try:
+        c.execute("""
+            SELECT COUNT(*) as count 
+            FROM users 
+            WHERE last_active >= datetime('now', ? || ' days')
+        """, (f'-{days}',))
+        count = c.fetchone()['count']
+    except Exception as e:
+        print(f"get_active_users xato: {e}")
+        count = 0
+    finally:
+        conn.close()
+
     return count
+
+
+def get_total_price_inquiries():
+    """Jami narxlatishlar soni"""
+    conn = get_conn()
+    c = conn.cursor()
+
+    try:
+        c.execute("SELECT COUNT(*) as count FROM price_history")
+        count = c.fetchone()['count']
+    except Exception as e:
+        print(f"get_total_price_inquiries xato: {e}")
+        count = 0
+    finally:
+        conn.close()
+
+    return count
+
+
+def debug_database():
+    """Bazani tekshirish - debug uchun"""
+    conn = get_conn()
+    c = conn.cursor()
+
+    print("\n=== DATABASE DEBUG ===")
+
+    # Users jadvalini tekshirish
+    try:
+        c.execute("SELECT COUNT(*) as count FROM users")
+        users_count = c.fetchone()['count']
+        print(f"✅ Users jadvali: {users_count} ta")
+
+        c.execute("SELECT COUNT(*) as count FROM users WHERE is_registered = 1")
+        reg_count = c.fetchone()['count']
+        print(f"✅ Ro'yxatdan o'tganlar: {reg_count} ta")
+
+        # So'nggi 5 ta foydalanuvchini ko'rish
+        c.execute("""
+            SELECT user_id, username, first_name, phone_number, is_registered, 
+                   datetime(last_active, 'localtime') as last_active
+            FROM users 
+            ORDER BY last_active DESC 
+            LIMIT 5
+        """)
+        print("\nSo'nggi 5 ta foydalanuvchi:")
+        for row in c.fetchall():
+            print(f"  • {row['first_name']} (@{row['username']}) - {row['last_active']}")
+    except Exception as e:
+        print(f"❌ Users jadvalidagi xato: {e}")
+
+    # Price history jadvalini tekshirish
+    try:
+        c.execute("SELECT COUNT(*) as count FROM price_history")
+        history_count = c.fetchone()['count']
+        print(f"\n✅ Price history jadvali: {history_count} ta")
+
+        # So'nggi 5 ta narxlatish
+        c.execute("""
+            SELECT ph.model_name, ph.final_price, 
+                   datetime(ph.created_at, 'localtime') as created_at,
+                   u.first_name
+            FROM price_history ph
+            LEFT JOIN users u ON ph.user_id = u.id
+            ORDER BY ph.created_at DESC 
+            LIMIT 5
+        """)
+        print("\nSo'nggi 5 ta narxlatish:")
+        for row in c.fetchall():
+            print(f"  • {row['model_name']} - ${row['final_price']} ({row['first_name']})")
+    except Exception as e:
+        print(f"❌ Price history jadvalidagi xato: {e}")
+
+    conn.close()
+    print("======================\n")
 
 
 # Avtomatik ishga tushirish

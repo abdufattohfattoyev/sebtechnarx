@@ -21,7 +21,12 @@ from utils.db_api.database import (
     get_models, get_storages, get_colors, get_batteries,
     get_sim_types, get_price, get_conn, DB_PATH, normalize_damage_format
 )
-from utils.db_api.stats_database import add_or_update_user, save_price_inquiry, register_user, is_user_registered
+from utils.db_api.stats_database import (
+    add_or_update_user, save_price_inquiry, register_user,
+    is_user_registered, get_user_stats, get_global_stats,
+    get_all_users, get_total_users, get_registered_users_count,
+    get_active_users, get_total_price_inquiries
+)
 from data.config import ADMINS, START_PHOTO_FILE_ID
 
 # ================ KONSTANTALAR ================
@@ -82,19 +87,13 @@ def main_menu(is_admin=False):
 
     # Birinchi qator - 2 ta tugma
     kb.row(
-        KeyboardButton("📱 iPhone narxini bilish"),
-        KeyboardButton("ℹ️ Biz haqimizda")
+        KeyboardButton("📱 iPhone narxini bilish")
     )
 
     # Ikkinchi qator
     if is_admin:
         kb.row(
-            KeyboardButton("🔧 Admin panel"),
-            KeyboardButton("👨‍💼 Admin bilan aloqa")
-        )
-    else:
-        kb.row(
-            KeyboardButton("👨‍💼 Admin bilan aloqa")
+            KeyboardButton("🔧 Admin panel")
         )
 
     return kb
@@ -270,13 +269,17 @@ def sort_batteries_naturally(batteries):
 
 
 # ================ ASOSIY HANDLERLAR ================
+ALLOWED_USERS = [
+    1066769377, 85697724
+]
+
 
 # === START ===
 @dp.message_handler(commands=['start'])
-async def start(message: types.Message):
+async def start(message: types.Message, state: FSMContext):
     user = message.from_user
 
-    # Foydalanuvchini bazaga qo'shish (telefon raqamsiz)
+    # ✅ Foydalanuvchini bazaga qo'shish (kontaktsiz)
     user_data = add_or_update_user(
         user_id=user.id,
         username=user.username,
@@ -286,22 +289,27 @@ async def start(message: types.Message):
 
     # Ro'yxatdan o'tganligini tekshirish
     if not is_user_registered(user.id):
-        text = f"""\
+        text = f"""
 👋 Assalomu alaykum, <b>{user.full_name}</b>!
 
 📱 iPhone narxlarini aniq hisoblaymiz
 
 <b>⬇️ Davom etish uchun telefon raqamingizni yuboring:</b>
 """
-        await message.answer(text, reply_markup=phone_request_kb(), parse_mode="HTML")
+        await message.answer(
+            text,
+            reply_markup=phone_request_kb(),
+            parse_mode="HTML"
+        )
         await UserState.waiting_phone.set()
     else:
-        # Ro'yxatdan o'tgan - asosiy menyuni ko'rsatish
+        await state.finish()
         models = get_models()
-        text = f"""\
+        text = f"""
 👋 Assalomu alaykum, <b>{user.full_name}</b>!
 
 📱 iPhone narxlarini aniq hisoblaymiz
+✅ Hozir <b>{len(models)}</b> ta model mavjud
 
 <b>⬇️ Quyidagi menyulardan birini tanlang:</b>
 """
@@ -333,6 +341,21 @@ async def process_phone(message: types.Message, state: FSMContext):
 # === MODEL TANLASH ===
 @dp.message_handler(lambda m: m.text == "📱 iPhone narxini bilish")
 async def choose_model(message: types.Message, state: FSMContext):
+    # Foydalanuvchi ro'yxatdan o'tganligini tekshirish
+    if not is_user_registered(message.from_user.id):
+        text = f"""\
+📱 iPhone narxini bilish uchun avval ro'yxatdan o'tishingiz kerak.
+
+<b>⬇️ Telefon raqamingizni yuboring:</b>
+"""
+        await message.answer(
+            text,
+            reply_markup=phone_request_kb(),
+            parse_mode="HTML"
+        )
+        await UserState.waiting_phone.set()
+        return
+
     models = get_models()
     if not models:
         await message.answer("❌ Hozircha modellar mavjud emas", reply_markup=main_menu())
@@ -388,6 +411,7 @@ async def model_selected(message: types.Message, state: FSMContext):
 @dp.message_handler(lambda m: m.text in ["◀️ Orqaga", "🏠 Bosh menyu"], state="*")
 async def back_handler(message: types.Message, state: FSMContext):
     current = await state.get_state()
+
     if not current:
         await message.answer("🏠 Bosh menyu", reply_markup=main_menu(message.from_user.id in ADMINS))
         return
@@ -400,30 +424,81 @@ async def back_handler(message: types.Message, state: FSMContext):
     # Orqaga bosilganda oldingi bosqichga qaytish
     if current == UserState.waiting_storage.state:
         await choose_model(message, state)
+
     elif current == UserState.waiting_color.state:
+        # Model tanlangan edi, xotira tanlashga qaytish
         data = await state.get_data()
-        msg = types.Message(text=data.get('model_name', ''))
-        msg.from_user = message.from_user
-        await model_selected(msg, state)
+        storages = get_storages(data['model_id'])
+
+        if not storages:
+            await state.finish()
+            await message.answer("❌ Xotira variantlari yo'q", reply_markup=main_menu(message.from_user.id in ADMINS))
+            return
+
+        sorted_storages = sort_storages_naturally(storages)
+        storage_sizes = [s['size'] for s in sorted_storages]
+        kb = create_keyboard(storage_sizes, row_width=3)
+
+        await message.answer("<b>💾 Xotira hajmini tanlang:</b>", reply_markup=kb, parse_mode="HTML")
+        await UserState.waiting_storage.set()
+
     elif current == UserState.waiting_battery.state:
+        # Rang tanlashga qaytish
         data = await state.get_data()
-        msg = types.Message(text=data.get('storage', ''))
-        msg.from_user = message.from_user
-        await storage_selected(msg, state)
-    elif current in [UserState.waiting_sim.state, UserState.waiting_box.state]:
+        colors = get_colors(data['model_id']) or [{"name": "Standart"}]
+        color_names = [c['name'] for c in colors]
+        kb = create_keyboard(color_names, row_width=2)
+
+        await message.answer("<b>🎨 Rangni tanlang:</b>", reply_markup=kb, parse_mode="HTML")
+        await UserState.waiting_color.set()
+
+    elif current == UserState.waiting_sim.state:
+        # Batareya tanlashga qaytish
         data = await state.get_data()
-        msg = types.Message(text=data.get('color', 'Standart'))
-        msg.from_user = message.from_user
-        await color_selected(msg, state)
+        batteries = get_batteries(data['model_id']) or [{"label": "100%"}]
+        sorted_batteries = sort_batteries_naturally(batteries)
+        battery_labels = [b['label'] for b in sorted_batteries]
+        kb = create_keyboard(battery_labels, row_width=2)
+
+        await message.answer("<b>🔋 Batareya holatini tanlang:</b>", reply_markup=kb, parse_mode="HTML")
+        await UserState.waiting_battery.set()
+
+    elif current == UserState.waiting_box.state:
+        # SIM yoki batareyaga qaytish
+        data = await state.get_data()
+        sims = get_sim_types(data['model_id'])
+
+        if len(sims) == 1:
+            # Agar 1 ta SIM bo'lsa, batareyaga qaytish
+            batteries = get_batteries(data['model_id']) or [{"label": "100%"}]
+            sorted_batteries = sort_batteries_naturally(batteries)
+            battery_labels = [b['label'] for b in sorted_batteries]
+            kb = create_keyboard(battery_labels, row_width=2)
+
+            await message.answer("<b>🔋 Batareya holatini tanlang:</b>", reply_markup=kb, parse_mode="HTML")
+            await UserState.waiting_battery.set()
+        else:
+            # SIM tanlashga qaytish
+            kb = ReplyKeyboardMarkup(resize_keyboard=True)
+            kb.row(KeyboardButton("📱 SIM karta"), KeyboardButton("📲 eSIM"))
+            kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
+
+            await message.answer("<b>📞 SIM turini tanlang:</b>", reply_markup=kb, parse_mode="HTML")
+            await UserState.waiting_sim.set()
+
     elif current == UserState.waiting_parts_choice.state:
-        data = await state.get_data()
-        msg = types.Message(text=data.get('has_box', 'Bor'))
-        msg.from_user = message.from_user
-        await box_selected(msg, state)
+        # Quti tanlashga qaytish
+        kb = ReplyKeyboardMarkup(resize_keyboard=True)
+        kb.row(KeyboardButton("✅ Bor"), KeyboardButton("❌ Yo'q"))
+        kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
+
+        await message.answer("<b>📦 Quti bor/yo'q:</b>", reply_markup=kb, parse_mode="HTML")
+        await UserState.waiting_box.set()
+
     elif current == UserState.waiting_parts.state:
-        data = await state.get_data()
+        # Qismlar tanloviga qaytish
         await state.update_data(selected_parts=[])
-        # Inline callback orqali qaytish
+
         await message.answer(
             "<b>🔧 Telefonning qismlari almashganmi?</b>",
             reply_markup=parts_choice_kb(),
@@ -442,10 +517,7 @@ async def storage_selected(message: types.Message, state: FSMContext):
     data = await state.get_data()
     colors = get_colors(data['model_id']) or [{"name": "Standart"}]
 
-    # Rang nomlarini olish
     color_names = [c['name'] for c in colors]
-
-    # Klaviatura yaratish (qatorda 2 ta tugma)
     kb = create_keyboard(color_names, row_width=2)
 
     await message.answer("<b>🎨 Rangni tanlang:</b>", reply_markup=kb, parse_mode="HTML")
@@ -713,8 +785,6 @@ async def show_final_price(message: types.Message, state: FSMContext):
 🔧 <b>Holat:</b> {damage_display}
 
 💰 <b>TAXMINIY NARX:</b> {price_text}
-
-<i>Narxlar taxminiy, bozordagi narxlar farq qilishi mumkin.</i>
     """.strip()
 
     # Yakuniy klaviatura (2 qatordan)
@@ -733,28 +803,6 @@ async def show_final_price(message: types.Message, state: FSMContext):
 async def again(message: types.Message, state: FSMContext):
     await choose_model(message, state)
 
-
-# === ADMIN BILAN ALOQA ===
-@dp.message_handler(lambda m: m.text == "👨‍💼 Admin bilan aloqa")
-async def contact_admin(message: types.Message):
-    text = """\
-<b>👨‍💼 ADMIN BILAN ALOQA</b>
-
-📞 <b>Murojaat uchun:</b>
-- Telegram: @FATTOYEVABDUFATTOH
-- Telefon: +998 93 799 70 04
-
-📝 <b>Savollar:</b>
-- Narxlar haqida
-- Bot ishida xatoliklar
-- Yangi imkoniyatlar
-
-💬 <b>Ishlash vaqti:</b>
-Har kuni 09:00 - 21:00
-
-<i>Tez orada javob beramiz!</i>
-"""
-    await message.answer(text, parse_mode="HTML")
 
 
 # ================ ADMIN FUNKSIYALARI ================
@@ -784,6 +832,149 @@ async def admin_panel(message: types.Message):
     """
 
     await message.answer(text, reply_markup=admin_kb(), parse_mode="HTML")
+
+
+# === STATISTIKA === (start.py dagi 📊 Statistika handlerini almashtiring)
+
+@dp.message_handler(lambda m: m.text == "📊 Statistika" and m.from_user.id in ADMINS)
+async def admin_statistics(message: types.Message):
+    try:
+        progress_msg = await message.answer("⏳ Statistika tayyorlanmoqda...")
+
+        # 1. Asosiy raqamlar
+        try:
+            models_count = len(get_models())
+        except:
+            models_count = 0
+
+        try:
+            prices_count = get_total_prices_count()
+        except:
+            prices_count = 0
+
+        try:
+            total_users = get_total_users()
+        except Exception as e:
+            print(f"total_users xato: {e}")
+            total_users = 0
+
+        try:
+            registered_users = get_registered_users_count()
+        except Exception as e:
+            print(f"registered_users xato: {e}")
+            registered_users = 0
+
+        try:
+            active_users_today = get_active_users(1)
+        except Exception as e:
+            print(f"active_users_today xato: {e}")
+            active_users_today = 0
+
+        try:
+            active_users_week = get_active_users(7)
+        except Exception as e:
+            print(f"active_users_week xato: {e}")
+            active_users_week = 0
+
+        try:
+            active_users_month = get_active_users(30)
+        except Exception as e:
+            print(f"active_users_month xato: {e}")
+            active_users_month = 0
+
+        # 2. Global statistika
+        try:
+            today_stats = get_global_stats('today')
+        except Exception as e:
+            print(f"today_stats xato: {e}")
+            today_stats = {'total_inquiries': 0, 'active_users': 0, 'unique_models': 0}
+
+        try:
+            week_stats = get_global_stats('week')
+        except Exception as e:
+            print(f"week_stats xato: {e}")
+            week_stats = {'total_inquiries': 0, 'active_users': 0, 'unique_models': 0}
+
+        try:
+            month_stats = get_global_stats('month')
+        except Exception as e:
+            print(f"month_stats xato: {e}")
+            month_stats = {'total_inquiries': 0, 'active_users': 0, 'unique_models': 0}
+
+        try:
+            all_stats = get_global_stats('all')
+        except Exception as e:
+            print(f"all_stats xato: {e}")
+            all_stats = {'total_inquiries': 0, 'top_models': [], 'top_users': []}
+
+        # 3. Jami narxlatishlar (price_history jadvalidan)
+        try:
+            total_price_inquiries = get_total_price_inquiries()
+        except:
+            total_price_inquiries = 0
+
+        text = f"""<b>📊 ADMIN STATISTIKA</b>
+
+<b>👥 FOYDALANUVCHILAR:</b>
+• Jami: <b>{total_users}</b> ta
+• Ro'yxatdan o'tgan: <b>{registered_users}</b> ta
+• Faol (bugun): <b>{active_users_today}</b> ta
+• Faol (hafta): <b>{active_users_week}</b> ta
+• Faol (oy): <b>{active_users_month}</b> ta
+
+<b>📈 NARXLATISH STATISTIKASI:</b>
+• Bugungi: <b>{today_stats.get('total_inquiries', 0)}</b> ta
+• Haftalik: <b>{week_stats.get('total_inquiries', 0)}</b> ta
+• Oylik: <b>{month_stats.get('total_inquiries', 0)}</b> ta
+• Jami: <b>{total_price_inquiries}</b> ta
+
+<b>📱 MODELLAR VA NARXLAR:</b>
+• Modellar: <b>{models_count}</b> ta
+• Narxlar (bazada): <b>{prices_count}</b> ta
+"""
+
+        # 4. TOP 3 modellar
+        top_models = all_stats.get('top_models', [])[:3]
+        if top_models:
+            text += f"\n<b>🏆 ENG KO'P NARXLATILGAN (TOP 3):</b>\n"
+            for i, model in enumerate(top_models, 1):
+                model_name = model.get('model_name', 'Noma\'lum')
+                count = model.get('count', 0)
+                text += f"{i}. {model_name}: <b>{count}</b> marta\n"
+        else:
+            text += "\n<b>🏆 ENG KO'P NARXLATILGAN:</b>\nHali ma'lumot yo'q\n"
+
+        # 5. Bugungi TOP 3 foydalanuvchilar
+        today_top_users = today_stats.get('top_users', [])[:3] if today_stats else []
+        if today_top_users:
+            text += f"\n<b>⭐ BUGUNGI FAOL (TOP 3):</b>\n"
+            for i, user in enumerate(today_top_users, 1):
+                username = user.get('username') or user.get('first_name', 'Foydalanuvchi')
+                count = user.get('count', 0)
+                # Username bo'lsa @ bilan, aks holda ismni ko'rsat
+                display_name = f"@{username}" if user.get('username') else username
+                text += f"{i}. {display_name}: <b>{count}</b> marta\n"
+
+        # 6. Haftalik umumiy statistika
+        text += f"\n<b>📅 HAFTALIK STATISTIKA:</b>\n"
+        text += f"• Faol foydalanuvchilar: <b>{week_stats.get('active_users', 0)}</b> ta\n"
+        text += f"• Narxlar soni: <b>{week_stats.get('total_inquiries', 0)}</b> ta\n"
+        text += f"• Faol modellar: <b>{week_stats.get('unique_models', 0)}</b> ta\n"
+
+        # 7. Vaqt markeri
+        now = datetime.now()
+        text += f"\n<b>🕐 Yangilangan:</b> {now.strftime('%d.%m.%Y %H:%M')}"
+
+        await progress_msg.edit_text(text, parse_mode="HTML")
+
+    except Exception as e:
+        error_text = f"❌ Statistika olishda xato:\n<code>{str(e)[:300]}</code>"
+        try:
+            await message.answer(error_text, parse_mode="HTML")
+        except:
+            await message.answer(f"❌ Statistika olishda xato: {str(e)[:100]}")
+
+        traceback.print_exc()
 
 
 # === EXCEL IMPORT ===
@@ -890,14 +1081,60 @@ async def process_import(message: types.Message, state: FSMContext):
 
     try:
         # 1. Faylni yuklash
-        await message.document.download(destination_file=file_path)
+        try:
+            await message.document.download(destination_file=file_path)
+        except Exception as download_error:
+            error_text = str(download_error)
 
-        # 2. Fayl hajmini tekshirish
-        file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
-        if file_size_mb > MAX_FILE_SIZE_MB:
+            # Fayl hajmi haqida xatolik
+            if "too big" in error_text.lower() or "too large" in error_text.lower():
+                # Fayl hajmini olish (agar mavjud bo'lsa)
+                try:
+                    file_size_mb = message.document.file_size / (1024 * 1024)
+                except:
+                    file_size_mb = 0
+
+                await safe_edit_message(
+                    progress_msg,
+                    f"❌ <b>Fayl juda katta!</b>\n\n"
+                    f"📁 Telegram Bot API limiti: 20 MB\n"
+                    f"{'📊 Sizning fayl: ' + f'{file_size_mb:.1f} MB' if file_size_mb > 0 else ''}\n\n"
+                    f"💡 <b>Yechim:</b>\n"
+                    f"1️⃣ Excel faylni 2-3 qismga bo'ling\n"
+                    f"2️⃣ Har bir qismni alohida import qiling\n"
+                    f"3️⃣ Ma'lumotlarni kamroq qiling\n\n"
+                    f"<b>📝 Qanday bo'lish:</b>\n"
+                    f"• Excel ni oching\n"
+                    f"• 1-30,000 qatorni tanlang → Save As → qism1.xlsx\n"
+                    f"• 30,001-60,000 → qism2.xlsx\n"
+                    f"• Har birini alohida import qiling"
+                )
+            else:
+                await safe_edit_message(
+                    progress_msg,
+                    f"❌ Faylni yuklab bo'lmadi:\n<code>{error_text[:200]}</code>\n\n"
+                    f"Iltimos, qayta urinib ko'ring."
+                )
+
+            await state.finish()
+            return
+
+        # 2. Yuklangan faylni tekshirish
+        if not os.path.exists(file_path):
+            await safe_edit_message(progress_msg, "❌ Fayl yuklanmadi, qayta urinib ko'ring")
+            await state.finish()
+            return
+
+        # 3. Haqiqiy hajmni tekshirish
+        actual_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+
+        # Agar fayl juda katta bo'lsa
+        if actual_size_mb > MAX_FILE_SIZE_MB:
             await safe_edit_message(
                 progress_msg,
-                f"❌ Fayl juda katta: {file_size_mb:.1f} MB (maks: {MAX_FILE_SIZE_MB} MB)"
+                f"❌ <b>Fayl juda katta: {actual_size_mb:.1f} MB</b>\n\n"
+                f"📁 Maksimal: {MAX_FILE_SIZE_MB} MB\n\n"
+                f"💡 Faylni kichikroq qismlarga bo'ling va alohida import qiling."
             )
             os.remove(file_path)
             await state.finish()
@@ -905,10 +1142,10 @@ async def process_import(message: types.Message, state: FSMContext):
 
         await safe_edit_message(
             progress_msg,
-            f"✅ Fayl yuklandi: {file_size_mb:.1f} MB\n📊 Ma'lumotlar tahlil qilinmoqda..."
+            f"✅ Fayl yuklandi: {actual_size_mb:.1f} MB\n📊 Ma'lumotlar tahlil qilinmoqda..."
         )
 
-        # 3. Excelni o'qish
+        # 4. Excelni o'qish
         try:
             df = pd.read_excel(file_path, dtype=str)
         except Exception as e:
@@ -917,13 +1154,15 @@ async def process_import(message: types.Message, state: FSMContext):
             except Exception as e2:
                 await safe_edit_message(
                     progress_msg,
-                    f"❌ Excel faylni ochib bo'lmadi:\n{e}\n\nYoki:\n{e2}"
+                    f"❌ Excel faylni ochib bo'lmadi:\n<code>{str(e)[:100]}</code>\n\n"
+                    f"Yoki:\n<code>{str(e2)[:100]}</code>\n\n"
+                    f"Fayl buzilgan bo'lishi mumkin."
                 )
                 os.remove(file_path)
                 await state.finish()
                 return
 
-        # 4. Ma'lumotlarni tozalash
+        # 6. Ma'lumotlarni tozalash
         df = df.fillna('')
         df.columns = [str(col).strip() for col in df.columns]
 
@@ -946,14 +1185,16 @@ async def process_import(message: types.Message, state: FSMContext):
                     df.rename(columns={col: std_name}, inplace=True)
                     break
 
-        # 5. Kerakli ustunlarni tekshirish
+        # 7. Kerakli ustunlarni tekshirish
         required_columns = ['Model', 'Narx']
         missing_columns = [col for col in required_columns if col not in df.columns]
 
         if missing_columns:
+            available_cols = ', '.join(df.columns.tolist())
             await safe_edit_message(
                 progress_msg,
-                f"❌ Quyidagi ustunlar topilmadi: {', '.join(missing_columns)}"
+                f"❌ Kerakli ustunlar topilmadi: {', '.join(missing_columns)}\n\n"
+                f"📋 Mavjud ustunlar: {available_cols}"
             )
             os.remove(file_path)
             await state.finish()
@@ -965,7 +1206,7 @@ async def process_import(message: types.Message, state: FSMContext):
             f"✅ {total_rows} ta ma'lumot topildi\n🔄 Bazaga yozilmoqda... (0/{total_rows})"
         )
 
-        # 6. Optimallashtirilgan bazaga ulanish
+        # 8. Optimallashtirilgan bazaga ulanish
         conn = optimize_database_for_import()
         c = conn.cursor()
 
@@ -1064,6 +1305,7 @@ async def process_import(message: types.Message, state: FSMContext):
                 print(f"get_cell_value xato: {col_name}, {e}")
                 return str(default).strip()
 
+        # 9. Ma'lumotlarni import qilish
         for index, row in df.iterrows():
             try:
                 model_name = get_cell_value(row, 'Model', '')
@@ -1160,7 +1402,7 @@ async def process_import(message: types.Message, state: FSMContext):
                     imported += 1
 
                     # Progress yangilash
-                    if imported - last_progress_update >= 250 or imported == total_rows:
+                    if imported - last_progress_update >= 500 or imported == total_rows:
                         progress_text = f"⏳ {imported}/{total_rows} ta yozuv qo'shildi..."
                         try:
                             await safe_edit_message(progress_msg, progress_text)
@@ -1179,17 +1421,17 @@ async def process_import(message: types.Message, state: FSMContext):
                 if len(errors) < 10:
                     errors.append(f"Qator {index + 2}: {str(e)[:50]}")
 
-        # 7. Commit qilish
+        # 10. Commit qilish
         conn.commit()
 
-        # 8. Natijani yuborish
+        # 11. Natijani yuborish
         result_message = f"""\
 ✅ <b>IMPORT YAKUNLANDI!</b>
 
 📊 <b>Statistika:</b>
 ✅ Qo'shildi: {imported} ta
 ⏭ O'tkazildi: {skipped} ta
-📁 Fayl hajmi: {file_size_mb:.1f} MB
+📁 Fayl hajmi: {actual_size_mb:.1f} MB
 
 🔍 <b>Bazada jami:</b>
 - 📱 Modellar: {len(get_models())} ta
@@ -1202,7 +1444,7 @@ async def process_import(message: types.Message, state: FSMContext):
 
         await safe_edit_message(progress_msg, result_message)
 
-        # 9. Namuna ko'rsatish
+        # 12. Namuna ko'rsatish
         if imported > 0:
             await asyncio.sleep(1)
 
@@ -1377,68 +1619,6 @@ async def excel_export(message: types.Message):
         traceback.print_exc()
 
 
-# === STATISTIKA ===
-@dp.message_handler(lambda m: m.text == "📊 Statistika" and m.from_user.id in ADMINS)
-async def admin_statistics(message: types.Message):
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-
-        c.execute("SELECT COUNT(*) FROM models")
-        models_count = c.fetchone()[0]
-
-        c.execute("SELECT COUNT(*) FROM prices")
-        prices_count = c.fetchone()[0]
-
-        c.execute("SELECT COUNT(DISTINCT model_id) FROM prices")
-        active_models = c.fetchone()[0]
-
-        c.execute("""\
-            SELECT m.name, COUNT(p.id) as count
-            FROM prices p
-            JOIN models m ON p.model_id = m.id
-            GROUP BY p.model_id
-            ORDER BY count DESC
-            LIMIT 5
-        """)
-        top_models = c.fetchall()
-
-        c.execute("SELECT MIN(price), MAX(price), AVG(price) FROM prices WHERE price > 0")
-        min_price, max_price, avg_price = c.fetchone()
-
-        c.execute("SELECT MAX(created_at) FROM prices")
-        last_update = c.fetchone()[0]
-
-        conn.close()
-
-        text = f"""\
-<b>📊 ADMIN STATISTIKA</b>
-
-<b>📈 Umumiy ko'rsatkichlar:</b>
-- 📱 Modellar: {models_count} ta
-- 💰 Narxlar: {prices_count} ta
-- ✅ Faol modellar: {active_models} ta
-
-<b>💰 Narxlar diapazoni:</b>
-- 📉 Minimal: ${min_price or 0:,.0f}
-- 📈 Maksimal: ${max_price or 0:,.0f}
-- 📊 O'rtacha: ${avg_price or 0:,.0f}
-
-<b>🏆 Top modellar (narxlar soni):</b>
-"""
-
-        for i, (model, count) in enumerate(top_models, 1):
-            text += f"{i}. {model}: {count} ta\n"
-
-        text += f"\n<b>📅 Oxirgi yangilanish:</b> {last_update or 'Nomalum'}"
-        text += f"\n<b>🕐 Joriy vaqt:</b> {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-
-        await message.answer(text, parse_mode="HTML")
-
-    except Exception as e:
-        await message.answer(f"❌ Statistika olishda xato: {str(e)}")
-
-
 # === BAZANI TOZALASH ===
 @dp.message_handler(lambda m: m.text == "🧹 Bazani tozalash" and m.from_user.id in ADMINS)
 async def cleanup_database(message: types.Message):
@@ -1548,33 +1728,6 @@ Model: <b>{model['name']}</b>
         await message.answer(f"❌ Xatolik: {str(e)}")
 
 
-# === BIZ HAQIMIZDA ===
-@dp.message_handler(lambda m: m.text == "ℹ️ Biz haqimizda")
-async def about(message: types.Message):
-    text = """\
-<b>📱 iPhone Narx Hisoblagich</b>
-
-🤖 <b>Bot haqida:</b>
-- iPhone modellari narxlarini hisoblaydi
-- Real bozor narxlari asosida
-- 100+ turdagi konfiguratsiyalar
-
-🔧 <b>Imkoniyatlar:</b>
-- Barcha iPhone modellari
-- Xotira, rang, batareya tanlash
-- SIM turi va quti holati
-- Almashgan qismlarni hisobga olish
-
-👨‍💻 <b>Dasturchi:</b> @FATTOYEVABDUFATTOH
-
-📞 <b>Aloqa:</b>
-- Taklif va shikoyatlar uchun: @FATTOYEVABDUFATTOH
-- Yangiliklar: @sebtech1
-
-<i>Bot doimiy yangilanib boriladi!</i>
-"""
-
-    await message.answer(text, parse_mode="HTML")
 
 
 # === NOMA'LUM XABARLAR ===
