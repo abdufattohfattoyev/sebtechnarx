@@ -1096,15 +1096,28 @@ async def process_import(message: types.Message, state: FSMContext):
     file_path = f"temp_import_{user_id}_{timestamp}.xlsx"
 
     try:
-        # 1. Faylni yuklash
+        # ✅ 1. TIMEOUT BILAN YUKLASH
         try:
-            await message.document.download(destination_file=file_path)
+            file = await asyncio.wait_for(
+                bot.get_file(message.document.file_id),
+                timeout=30
+            )
+            await asyncio.wait_for(
+                bot.download_file(file.file_path, file_path),
+                timeout=90
+            )
+        except asyncio.TimeoutError:
+            await safe_edit_message(
+                progress_msg,
+                "❌ Fayl yuklash timeout.\n\n"
+                "Iltimos, qayta urinib ko'ring yoki faylni kichikroq qiling."
+            )
+            await state.finish()
+            return
         except Exception as download_error:
             error_text = str(download_error)
 
-            # Fayl hajmi haqida xatolik
             if "too big" in error_text.lower() or "too large" in error_text.lower():
-                # Fayl hajmini olish (agar mavjud bo'lsa)
                 try:
                     file_size_mb = message.document.file_size / (1024 * 1024)
                 except:
@@ -1144,7 +1157,6 @@ async def process_import(message: types.Message, state: FSMContext):
         # 3. Haqiqiy hajmni tekshirish
         actual_size_mb = os.path.getsize(file_path) / (1024 * 1024)
 
-        # Agar fayl juda katta bo'lsa
         if actual_size_mb > MAX_FILE_SIZE_MB:
             await safe_edit_message(
                 progress_msg,
@@ -1161,12 +1173,12 @@ async def process_import(message: types.Message, state: FSMContext):
             f"✅ Fayl yuklandi: {actual_size_mb:.1f} MB\n📊 Ma'lumotlar tahlil qilinmoqda..."
         )
 
-        # 4. Excelni o'qish
+        # ✅ 4. MEMORY-EFFICIENT EXCEL O'QISH
         try:
-            df = pd.read_excel(file_path, dtype=str)
+            df = pd.read_excel(file_path, dtype=str, engine='openpyxl')
         except Exception as e:
             try:
-                df = pd.read_excel(file_path, engine='xlrd', dtype=str)
+                df = pd.read_excel(file_path, dtype=str, engine='xlrd')
             except Exception as e2:
                 await safe_edit_message(
                     progress_msg,
@@ -1178,7 +1190,7 @@ async def process_import(message: types.Message, state: FSMContext):
                 await state.finish()
                 return
 
-        # 6. Ma'lumotlarni tozalash
+        # 5. Ma'lumotlarni tozalash
         df = df.fillna('')
         df.columns = [str(col).strip() for col in df.columns]
 
@@ -1201,7 +1213,7 @@ async def process_import(message: types.Message, state: FSMContext):
                     df.rename(columns={col: std_name}, inplace=True)
                     break
 
-        # 7. Kerakli ustunlarni tekshirish
+        # 6. Kerakli ustunlarni tekshirish
         required_columns = ['Model', 'Narx']
         missing_columns = [col for col in required_columns if col not in df.columns]
 
@@ -1217,14 +1229,30 @@ async def process_import(message: types.Message, state: FSMContext):
             return
 
         total_rows = len(df)
+
+        # ✅ Juda katta fayl ogohlantirish
+        if total_rows > 50000:
+            await safe_edit_message(
+                progress_msg,
+                f"⚠️ Juda ko'p qator: {total_rows:,}\n\n"
+                f"Import 5-10 daqiqa davom etishi mumkin.\n"
+                f"Iltimos sabr bilan kuting..."
+            )
+            await asyncio.sleep(2)
+
         await safe_edit_message(
             progress_msg,
-            f"✅ {total_rows} ta ma'lumot topildi\n🔄 Bazaga yozilmoqda... (0/{total_rows})"
+            f"✅ {total_rows:,} ta ma'lumot topildi\n🔄 Bazaga yozilmoqda... (0/{total_rows:,})"
         )
 
-        # 8. Optimallashtirilgan bazaga ulanish
+        # ✅ 7. OPTIMALLASHTIRILGAN BAZA ULANISH
         conn = optimize_database_for_import()
         c = conn.cursor()
+
+        # ✅ Xotira optimizatsiyasi
+        c.execute("PRAGMA temp_store = MEMORY")
+        c.execute("PRAGMA mmap_size = 30000000000")
+        c.execute("PRAGMA page_size = 4096")
 
         conn.execute("BEGIN TRANSACTION")
 
@@ -1296,6 +1324,8 @@ async def process_import(message: types.Message, state: FSMContext):
         skipped = 0
         errors = []
         last_progress_update = 0
+        batch_count = 0
+        BATCH_SIZE = 100  # ✅ Har 100 qatorda commit
 
         def get_cell_value(row, col_name, default=''):
             """DataFrame dan to'g'ri qiymat olish"""
@@ -1318,10 +1348,9 @@ async def process_import(message: types.Message, state: FSMContext):
 
                 return result
             except Exception as e:
-                print(f"get_cell_value xato: {col_name}, {e}")
                 return str(default).strip()
 
-        # 9. Ma'lumotlarni import qilish
+        # ✅ 8. BATCH PROCESSING BILAN IMPORT
         for index, row in df.iterrows():
             try:
                 model_name = get_cell_value(row, 'Model', '')
@@ -1368,7 +1397,6 @@ async def process_import(message: types.Message, state: FSMContext):
 
                 if not model_id:
                     skipped += 1
-                    errors.append(f"Qator {index + 2}: Model '{model_name}' saqlanmadi")
                     continue
 
                 # 2. Xotirani qo'shish
@@ -1416,43 +1444,58 @@ async def process_import(message: types.Message, state: FSMContext):
                     """, (model_id, storage, color or '', sim_type, battery, has_box, damage, price))
 
                     imported += 1
+                    batch_count += 1
 
-                    # Progress yangilash
-                    if imported - last_progress_update >= 500 or imported == total_rows:
-                        progress_text = f"⏳ {imported}/{total_rows} ta yozuv qo'shildi..."
+                    # ✅ BATCH COMMIT - har 100 qatorda
+                    if batch_count >= BATCH_SIZE:
+                        conn.commit()
+                        conn.execute("BEGIN TRANSACTION")
+                        batch_count = 0
+
+                    # ✅ Progress yangilash - har 1000 qatorda
+                    if imported - last_progress_update >= 1000 or imported == total_rows:
+                        progress_text = f"⏳ {imported:,}/{total_rows:,} ta yozuv qo'shildi..."
                         try:
                             await safe_edit_message(progress_msg, progress_text)
                             last_progress_update = imported
-                            await asyncio.sleep(0.1)
+                            await asyncio.sleep(0.05)  # ✅ CPU ga nafas
                         except:
                             pass
 
                 except sqlite3.IntegrityError as e:
                     skipped += 1
                     if "UNIQUE constraint" not in str(e):
-                        errors.append(f"Qator {index + 2}: {str(e)[:50]}")
+                        if len(errors) < 10:
+                            errors.append(f"Qator {index + 2}: {str(e)[:50]}")
 
             except Exception as e:
                 skipped += 1
                 if len(errors) < 10:
                     errors.append(f"Qator {index + 2}: {str(e)[:50]}")
 
-        # 10. Commit qilish
+        # ✅ 9. FINAL COMMIT
         conn.commit()
+
+        # ✅ 10. MEMORY CLEANUP
+        try:
+            del df
+            os.remove(file_path)
+        except:
+            pass
 
         # 11. Natijani yuborish
         result_message = f"""\
 ✅ <b>IMPORT YAKUNLANDI!</b>
 
 📊 <b>Statistika:</b>
-✅ Qo'shildi: {imported} ta
-⏭ O'tkazildi: {skipped} ta
+✅ Qo'shildi: {imported:,} ta
+⏭ O'tkazildi: {skipped:,} ta
 📁 Fayl hajmi: {actual_size_mb:.1f} MB
 
 🔍 <b>Bazada jami:</b>
 - 📱 Modellar: {len(get_models())} ta
-- 💰 Narxlar: {get_total_prices_count()} ta
-        """
+- 💰 Narxlar: {get_total_prices_count():,} ta
+"""
 
         if errors:
             error_text = "\n".join(errors[:5])
@@ -1490,9 +1533,11 @@ async def process_import(message: types.Message, state: FSMContext):
             except:
                 pass
 
+        import traceback
         traceback.print_exc()
 
     finally:
+        # ✅ CLEANUP
         try:
             restore_database_settings(conn)
             conn.close()

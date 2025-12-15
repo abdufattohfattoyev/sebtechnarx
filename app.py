@@ -1,23 +1,23 @@
-# app.py - ASOSIY FAYL
+# app.py
 import logging
+import asyncio
 from aiogram import executor
+from aiogram.utils.exceptions import TelegramAPIError, NetworkError
 
 from loader import dp, bot
 import middlewares, filters, handlers
 from data.config import ADMINS
 
-# Logging sozlamasi
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
 
-# Bot ishga tushganda
 async def on_startup(dispatcher):
-    """Bot ishga tushganda bajariladigan funksiyalar"""
+    """Bot ishga tushganda"""
 
-    # 1. Asosiy database yaratish (PHONES.DB)
+    # Database yaratish
     try:
         from utils.db_api.database import init_db
         init_db()
@@ -25,7 +25,6 @@ async def on_startup(dispatcher):
     except Exception as e:
         logging.error(f"❌ phones.db xato: {e}")
 
-    # 2. Statistika database yaratish (STATS.DB)
     try:
         from utils.db_api.stats_database import init_stats_tables
         init_stats_tables()
@@ -33,21 +32,27 @@ async def on_startup(dispatcher):
     except Exception as e:
         logging.error(f"❌ stats.db xato: {e}")
 
-    # 3. Adminlarga xabar yuborish
+    # Adminlarga xabar - XATO BILAN KURASHISH
     for admin_id in ADMINS:
         try:
-            await bot.send_message(admin_id, "🤖 Bot ishga tushdi!")
+            await asyncio.wait_for(
+                bot.send_message(admin_id, "🤖 Bot ishga tushdi!"),
+                timeout=10  # 10 soniya timeout
+            )
+        except asyncio.TimeoutError:
+            logging.warning(f"⚠️ Admin {admin_id} ga xabar yuborish timeout")
+        except (TelegramAPIError, NetworkError) as e:
+            logging.warning(f"⚠️ Admin {admin_id} ga xabar yuborib bo'lmadi: {e}")
         except Exception as e:
-            logging.error(f"❌ Admin {admin_id} ga xabar yuborib bo'lmadi: {e}")
+            logging.error(f"❌ Noma'lum xato: {e}")
 
     logging.info("🚀 Bot muvaffaqiyatli ishga tushdi!")
 
 
-# Bot to'xtaganda
 async def on_shutdown(dispatcher):
-    """Bot to'xtaganda bajariladigan funksiyalar"""
+    """Bot to'xtaganda"""
 
-    # Adminlarga xabar yuborish
+    # Adminlarga xabar
     for admin_id in ADMINS:
         try:
             await bot.send_message(admin_id, "⛔ Bot to'xtatildi!")
@@ -61,9 +66,19 @@ async def on_shutdown(dispatcher):
 
 
 if __name__ == '__main__':
-    executor.start_polling(
-        dp,
-        on_startup=on_startup,
-        on_shutdown=on_shutdown,
-        skip_updates=True
-    )
+    # ✅ YANGI: Exception handling bilan polling
+    try:
+        executor.start_polling(
+            dp,
+            on_startup=on_startup,
+            on_shutdown=on_shutdown,
+            skip_updates=True,
+            timeout=60,  # Polling timeout
+            relax=0.1,  # Requestlar orasida pauza
+            fast=False  # Fast mode o'chirish
+        )
+    except (KeyboardInterrupt, SystemExit):
+        logging.info("✋ Bot to'xtatildi (Ctrl+C)")
+    except Exception as e:
+        logging.critical(f"💥 KRITIK XATO: {e}")
+        raise

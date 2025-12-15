@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# Fontlarni o'rnatish
+# ✅ Fontlar va boshqa paketlar
 RUN apt-get update && apt-get install -y \
     fonts-dejavu \
     fonts-liberation \
@@ -8,12 +8,19 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Data papkasini yaratish va ruxsat berish
+# Data papkasini yaratish
 RUN mkdir -p /app/data && chmod -R 777 /app/data
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+
+# ✅ Pip upgrade va install
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+
+# ✅ Environment variables
+ENV PYTHONUNBUFFERED=1
+ENV MALLOC_ARENA_MAX=2
 
 CMD ["python", "app.py"]
