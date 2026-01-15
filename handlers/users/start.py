@@ -3,7 +3,8 @@ import asyncio
 import logging
 import re
 from datetime import datetime
-
+from datetime import datetime
+import pytz
 from aiogram import types
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
@@ -31,6 +32,13 @@ from utils.db_api.user_database import (
     get_user
 )
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+
+def uz_now():
+    return datetime.now(ZoneInfo("Asia/Tashkent")).strftime("%d.%m.%Y %H:%M")
+
 # ================ LOGGER ================
 logger = logging.getLogger(__name__)
 
@@ -47,10 +55,10 @@ PARTS = {
     'body': 'Korpus',
 }
 
-TELEGRAM_CHANNEL = "https://t.me/septech_official"
-INSTAGRAM_LINK = "https://instagram.com/septech.uz"
-CALLCENTER_1 = "+998 90 123 45 67"
-CALLCENTER_2 = "+998 71 123 45 67"
+TELEGRAM_CHANNEL = "https://t.me/septech1"
+INSTAGRAM_LINK = "https://www.instagram.com/sebtech.uz"
+CALLCENTER_1 = "+998 77 285 99 99"
+CALLCENTER_2 = "+998 91 285 99 99"
 
 ABOUT_TEXT = f"""✨ <b>SEPTECH</b>
 
@@ -1292,7 +1300,7 @@ async def show_final_price_from_callback(call: types.CallbackQuery, state: FSMCo
         balance = int(api_res.get("balance", 0) or 0)
         free_trials_left = 0
 
-    now = datetime.now().strftime("%d.%m.%Y %H:%M")
+    now = uz_now()
 
     # Narxni formatlash
     if isinstance(final_price, str):
@@ -1325,7 +1333,6 @@ async def show_final_price_from_callback(call: types.CallbackQuery, state: FSMCo
 
     await call.message.answer(text, reply_markup=kb, parse_mode="HTML")
     await state.finish()
-
 
 
 # ================ YAKUNIY NARX - ODDIY MESSAGE DAN ================
@@ -1438,7 +1445,7 @@ async def show_final_price(message: types.Message, state: FSMContext):
         balance = int(api_res.get("balance", 0) or 0)
         free_trials_left = 0
 
-    now = datetime.now().strftime("%d.%m.%Y %H:%M")
+    now = uz_now()
 
     if isinstance(final_price, str):
         display_price = final_price

@@ -3,7 +3,8 @@ import asyncio
 import logging
 import re
 from datetime import datetime
-
+from datetime import datetime
+import pytz
 from aiogram import types
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
@@ -31,6 +32,13 @@ from utils.db_api.user_database import (
     get_user
 )
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+
+def uz_now():
+    return datetime.now(ZoneInfo("Asia/Tashkent")).strftime("%d.%m.%Y %H:%M")
+
 # ================ LOGGER ================
 logger = logging.getLogger(__name__)
 
@@ -47,10 +55,10 @@ PARTS = {
     'body': 'Korpus',
 }
 
-TELEGRAM_CHANNEL = "https://t.me/septech_official"
-INSTAGRAM_LINK = "https://instagram.com/septech.uz"
-CALLCENTER_1 = "+998 90 123 45 67"
-CALLCENTER_2 = "+998 71 123 45 67"
+TELEGRAM_CHANNEL = "https://t.me/septech1"
+INSTAGRAM_LINK = "https://www.instagram.com/sebtech.uz"
+CALLCENTER_1 = "+998 77 285 99 99"
+CALLCENTER_2 = "+998 91 285 99 99"
 
 ABOUT_TEXT = f"""✨ <b>SEPTECH</b>
 
@@ -1292,7 +1300,7 @@ async def show_final_price_from_callback(call: types.CallbackQuery, state: FSMCo
         balance = int(api_res.get("balance", 0) or 0)
         free_trials_left = 0
 
-    now = datetime.now().strftime("%d.%m.%Y %H:%M")
+    now = uz_now()
 
     # Narxni formatlash
     if isinstance(final_price, str):
@@ -1327,21 +1335,20 @@ async def show_final_price_from_callback(call: types.CallbackQuery, state: FSMCo
     await state.finish()
 
 
-
 # ================ YAKUNIY NARX - ODDIY MESSAGE DAN ================
 
 async def show_final_price(message: types.Message, state: FSMContext):
     """
-    Yakuniy narxni ko'rsatish - ODDIY MESSAGE dan
-    ✅ message.from_user.id ishlatadi
+    ✅ Yakuniy narx - MESSAGE
+    - free_trial bo'lsa LOCAL dan yechadi
+    - free tugasa API paid balansdan yechadi
     """
-    from utils.db_api.user_database import use_pricing
+    from utils.db_api.user_database import check_can_price, use_pricing as use_pricing_local
 
     data = await state.get_data()
     selected = data.get('selected_parts', [])
     color = data.get('color') or ""
 
-    # SIM turini tekshirish
     if 'sim_type' not in data:
         data['sim_type'] = 'physical'
 
@@ -1371,42 +1378,80 @@ async def show_final_price(message: types.Message, state: FSMContext):
     elif isinstance(final_price, (int, float)):
         price_value = int(final_price)
 
-    # ✅ MESSAGE dan user_id olish
-    result = use_pricing(
-        telegram_id=message.from_user.id,  # ✅ TO'G'RI
-        phone_model=phone_model,
-        storage=data.get('storage', ''),
-        color=color,
-        battery=data.get('battery', '100%'),
-        sim_type=data.get('sim_type', 'physical'),
-        has_box=data.get('has_box', 'Yo\'q'),
-        damage=damage_display,
-        price=price_value
-    )
+    user_id = message.from_user.id
 
-    # Xatolik tekshiruvi
-    if not result.get('success'):
-        error_msg = result.get('error', 'Xatolik yuz berdi')
-        await message.answer(
-            f"❌ {error_msg}",
-            reply_markup=main_menu(message.from_user.id in ADMINS)
+    local_check = check_can_price(user_id)
+    free_trials_left = int(local_check.get("free_trials_left", 0) or 0)
+
+    is_free = False
+    balance = 0
+
+    if free_trials_left > 0:
+        local_res = use_pricing_local(
+            telegram_id=user_id,
+            phone_model=phone_model,
+            storage=data.get('storage', ''),
+            color=color,
+            battery=data.get('battery', '100%'),
+            sim_type=data.get('sim_type', 'physical'),
+            has_box=data.get('has_box', "Yo'q"),
+            damage=damage_display,
+            price=price_value
         )
-        await state.finish()
-        return
 
-    # Natijalarni olish
-    balance = result.get('balance', 0)
-    free_trials_left = result.get('free_trials_left', 0)
-    is_free = result.get('is_free', False)
-    now = datetime.now().strftime("%d.%m.%Y %H:%M")
+        if not local_res.get("success"):
+            await message.answer(
+                f"❌ {local_res.get('error', 'Xatolik')}",
+                reply_markup=main_menu(user_id in ADMINS)
+            )
+            await state.finish()
+            return
 
-    # Narxni formatlash
+        is_free = True
+        free_trials_left = int(local_res.get("free_trials_left", 0) or 0)
+
+        try:
+            api_res = await api.get_balance(user_id)
+            balance = int(api_res.get("balance", 0) or 0)
+        except Exception as e:
+            logger.error(f"API balance get error: {e}")
+            balance = 0
+
+    else:
+        try:
+            api_res = await api.use_pricing(
+                telegram_id=user_id,
+                phone_model=phone_model,
+                price=price_value
+            )
+        except Exception as e:
+            logger.error(f"API use_pricing error: {e}", exc_info=True)
+            await message.answer(
+                "❌ Server bilan bog'lanishda xatolik (API). Keyinroq urinib ko'ring.",
+                reply_markup=main_menu(user_id in ADMINS)
+            )
+            await state.finish()
+            return
+
+        if not api_res.get("success"):
+            await message.answer(
+                f"❌ {api_res.get('error', 'Balans yetarli emas')}",
+                reply_markup=main_menu(user_id in ADMINS)
+            )
+            await state.finish()
+            return
+
+        is_free = False
+        balance = int(api_res.get("balance", 0) or 0)
+        free_trials_left = 0
+
+    now = uz_now()
+    
     if isinstance(final_price, str):
         display_price = final_price
     else:
-        display_price = f"{price_value:,.0f} $".replace(",", " ")
+        display_price = f"${price_value:,.0f}".replace(",", " ")
 
-    # Yakuniy xabar
     text = f"""📊 <b>HISOBLASH NATIJASI</b>
 
 📱 <b>Model:</b> {data['model_name']}
@@ -1419,20 +1464,20 @@ async def show_final_price(message: types.Message, state: FSMContext):
 
 💰 <b>Narx:</b> <code>{display_price}</code>
 
-{'🎁 <b>Bepul urinishdan foydalanildi!</b>' if is_free else '💰 <b>Balansdan foydalanildi!</b>'}
+{'🎁 <b>Bepul urinishdan foydalanildi!</b>' if is_free else '💰 <b>Pullik balansdan foydalanildi!</b>'}
 💳 <b>Yangi balans:</b> {balance} ta narxlash
 🎁 <b>Bepul urinishlar qoldi:</b> {free_trials_left} ta
 
 🕒 <b>Sana:</b> {now}
 """
 
-    # Keyboard
     from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.row(KeyboardButton("🔄 Yana hisoblash"), KeyboardButton("🏠 Bosh menyu"))
 
     await message.answer(text, reply_markup=kb, parse_mode="HTML")
     await state.finish()
+
 
 # ================ BIZ HAQIMIZDA ================
 
