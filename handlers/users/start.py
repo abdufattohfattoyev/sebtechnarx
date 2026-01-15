@@ -1504,10 +1504,10 @@ async def again(message: types.Message, state: FSMContext):
 
 # ================ NOMA'LUM XABARLAR ================
 
-@dp.message_handler(state='*')
-async def unknown_message(message: types.Message):
-    """Noma'lum xabarlarga javob"""
-    await message.answer(
-        "🤖 Iltimos, menyudan birini tanlang yoki /start ni bosing.",
-        reply_markup=main_menu(message.from_user.id in ADMINS)
-    )
+# @dp.message_handler(state='*')
+# async def unknown_message(message: types.Message):
+#     """Noma'lum xabarlarga javob"""
+#     await message.answer(
+#         "🤖 Iltimos, menyudan birini tanlang yoki /start ni bosing.",
+#         reply_markup=main_menu(message.from_user.id in ADMINS)
+#     )

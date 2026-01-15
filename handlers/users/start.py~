@@ -55,7 +55,7 @@ PARTS = {
     'body': 'Korpus',
 }
 
-TELEGRAM_CHANNEL = "https://t.me/septech1"
+TELEGRAM_CHANNEL = "https://t.me/sebtech1"
 INSTAGRAM_LINK = "https://www.instagram.com/sebtech.uz"
 CALLCENTER_1 = "+998 77 285 99 99"
 CALLCENTER_2 = "+998 91 285 99 99"
