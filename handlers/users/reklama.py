@@ -10,7 +10,7 @@ from aiogram.utils.exceptions import BotBlocked, ChatNotFound, RetryAfter, Unaut
 from aiogram.dispatcher.filters import Command
 
 # Stats database import
-from utils.db_api.stats_database import get_all_users
+from utils.db_api.user_database import get_all_users
 
 # Reklama yuborish jarayonlarini saqlash uchun ro'yxat
 advertisements = []

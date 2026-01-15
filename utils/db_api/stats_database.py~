@@ -1,4 +1,5 @@
-# utils/db_api/stats_database.py - TO'LIQ VERSIYA
+# utils/db_api/stats_database.py - TO'GRILANGAN VERSIYA
+
 import sqlite3
 import os
 from datetime import datetime, timedelta
@@ -99,9 +100,11 @@ def add_or_update_user(user_id, username=None, first_name=None, last_name=None, 
     """, (user_id, username, first_name, last_name, phone_number, is_registered))
 
     conn.commit()
+
     c.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
     user_data = c.fetchone()
     conn.close()
+
     return dict(user_data) if user_data else None
 
 
@@ -109,15 +112,19 @@ def register_user(user_id, phone_number):
     """Foydalanuvchini ro'yxatdan o'tkazish"""
     conn = get_conn()
     c = conn.cursor()
+
     c.execute("""
         UPDATE users 
         SET phone_number = ?, is_registered = 1, last_active = CURRENT_TIMESTAMP
         WHERE user_id = ?
     """, (phone_number, user_id))
+
     conn.commit()
+
     c.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
     user_data = c.fetchone()
     conn.close()
+
     return dict(user_data) if user_data else None
 
 
@@ -129,6 +136,7 @@ def is_user_registered(user_id):
         c.execute("SELECT phone_number, is_registered FROM users WHERE user_id = ?", (user_id,))
         row = c.fetchone()
         conn.close()
+
         if row:
             return bool(row['phone_number']) and bool(row['is_registered'])
         return False
@@ -210,8 +218,10 @@ def save_price_inquiry(user_id, model_name, storage, color, sim, battery, box, d
     """Tugallangan narxlatishni saqlash"""
     conn = get_conn()
     c = conn.cursor()
+
     c.execute("SELECT id FROM users WHERE user_id = ?", (user_id,))
     user_row = c.fetchone()
+
     if not user_row:
         conn.close()
         return False
@@ -251,15 +261,15 @@ def get_price_inquiries_by_period(period='today'):
         c = conn.cursor()
 
         if period == 'today':
-            date_filter = "WHERE DATE(created_at) = DATE('now')"
+            date_filter = "WHERE DATE(ph.created_at) = DATE('now')"
         elif period == 'week':
-            date_filter = "WHERE created_at >= datetime('now', '-7 days')"
+            date_filter = "WHERE ph.created_at >= datetime('now', '-7 days')"
         elif period == 'month':
-            date_filter = "WHERE created_at >= datetime('now', '-30 days')"
+            date_filter = "WHERE ph.created_at >= datetime('now', '-30 days')"
         else:
             date_filter = ""
 
-        c.execute(f"SELECT COUNT(*) as count FROM price_history {date_filter}")
+        c.execute(f"SELECT COUNT(*) as count FROM price_history ph {date_filter}")
         count = c.fetchone()['count']
         conn.close()
         return count
@@ -273,8 +283,10 @@ def get_user_stats(user_id, period='all'):
     """Foydalanuvchi statistikasi"""
     conn = get_conn()
     c = conn.cursor()
+
     c.execute("SELECT id FROM users WHERE user_id = ?", (user_id,))
     user_row = c.fetchone()
+
     if not user_row:
         conn.close()
         return None
@@ -283,72 +295,78 @@ def get_user_stats(user_id, period='all'):
 
     date_filter = ""
     if period == 'today':
-        date_filter = "AND DATE(created_at) = DATE('now')"
+        date_filter = "AND DATE(ph.created_at) = DATE('now')"
     elif period == 'week':
-        date_filter = "AND created_at >= datetime('now', '-7 days')"
+        date_filter = "AND ph.created_at >= datetime('now', '-7 days')"
     elif period == 'month':
-        date_filter = "AND created_at >= datetime('now', '-30 days')"
+        date_filter = "AND ph.created_at >= datetime('now', '-30 days')"
 
     c.execute(f"""
         SELECT 
             COUNT(*) as total_inquiries,
             COUNT(DISTINCT model_name) as unique_models,
-            COUNT(DISTINCT DATE(created_at)) as active_days
-        FROM price_history 
-        WHERE user_id = ? {date_filter}
+            COUNT(DISTINCT DATE(ph.created_at)) as active_days
+        FROM price_history ph
+        WHERE ph.user_id = ? {date_filter}
     """, (db_user_id,))
 
     stats = dict(c.fetchone())
 
     c.execute(f"""
         SELECT model_name, COUNT(*) as count
-        FROM price_history 
-        WHERE user_id = ? {date_filter}
+        FROM price_history ph
+        WHERE ph.user_id = ? {date_filter}
         GROUP BY model_name
         ORDER BY count DESC
         LIMIT 5
     """, (db_user_id,))
 
     stats['top_models'] = [dict(row) for row in c.fetchall()]
+
     conn.close()
     return stats
 
 
 def get_global_stats(period='all'):
-    """Umumiy statistika"""
+    """Umumiy statistika - TO'GRILANGAN"""
     conn = get_conn()
     c = conn.cursor()
 
+    # WHERE yoki AND aniqlash
     date_filter = ""
     if period == 'today':
-        date_filter = "WHERE DATE(created_at) = DATE('now')"
+        date_filter = "WHERE DATE(ph.created_at) = DATE('now')"
     elif period == 'week':
-        date_filter = "WHERE created_at >= datetime('now', '-7 days')"
+        date_filter = "WHERE ph.created_at >= datetime('now', '-7 days')"
     elif period == 'month':
-        date_filter = "WHERE created_at >= datetime('now', '-30 days')"
+        date_filter = "WHERE ph.created_at >= datetime('now', '-30 days')"
 
+    # Asosiy statistika
     c.execute(f"""
         SELECT 
             COUNT(*) as total_inquiries,
-            COUNT(DISTINCT user_id) as active_users,
-            COUNT(DISTINCT model_name) as unique_models
-        FROM price_history 
+            COUNT(DISTINCT ph.user_id) as active_users,
+            COUNT(DISTINCT ph.model_name) as unique_models
+        FROM price_history ph
         {date_filter}
     """)
 
     stats = dict(c.fetchone())
 
+    # TOP modellar
     c.execute(f"""
-        SELECT model_name, COUNT(*) as count
-        FROM price_history 
+        SELECT ph.model_name, COUNT(*) as count
+        FROM price_history ph
         {date_filter}
-        GROUP BY model_name
+        GROUP BY ph.model_name
         ORDER BY count DESC
         LIMIT 10
     """)
 
     stats['top_models'] = [dict(row) for row in c.fetchall()]
 
+    # TOP foydalanuvchilar
+    # WHERE ni AND ga o'zgartirish kerak agar date_filter bo'lsa
     where_clause = date_filter.replace("WHERE", "AND") if date_filter else ""
 
     c.execute(f"""
@@ -362,6 +380,7 @@ def get_global_stats(period='all'):
     """)
 
     stats['top_users'] = [dict(row) for row in c.fetchall()]
+
     conn.close()
     return stats
 
@@ -370,8 +389,10 @@ def get_recent_history(user_id, limit=10):
     """Foydalanuvchining oxirgi narxlatish tarixi"""
     conn = get_conn()
     c = conn.cursor()
+
     c.execute("SELECT id FROM users WHERE user_id = ?", (user_id,))
     user_row = c.fetchone()
+
     if not user_row:
         conn.close()
         return []
@@ -381,10 +402,10 @@ def get_recent_history(user_id, limit=10):
     c.execute("""
         SELECT model_name, storage_size, color_name, sim_type,
                battery_label, has_box, damage_pct, final_price,
-               datetime(created_at, 'localtime') as created_at
-        FROM price_history 
-        WHERE user_id = ?
-        ORDER BY created_at DESC
+               datetime(ph.created_at, 'localtime') as created_at
+        FROM price_history ph
+        WHERE ph.user_id = ?
+        ORDER BY ph.created_at DESC
         LIMIT ?
     """, (db_user_id, limit))
 
@@ -399,10 +420,10 @@ def get_top_models(limit=10):
         conn = get_conn()
         c = conn.cursor()
         c.execute("""
-            SELECT model_name, COUNT(*) as count,
-                   COUNT(DISTINCT user_id) as unique_users
-            FROM price_history
-            GROUP BY model_name
+            SELECT ph.model_name, COUNT(*) as count,
+                   COUNT(DISTINCT ph.user_id) as unique_users
+            FROM price_history ph
+            GROUP BY ph.model_name
             ORDER BY count DESC
             LIMIT ?
         """, (limit,))
@@ -462,12 +483,12 @@ def get_today_model_stats():
         conn = get_conn()
         c = conn.cursor()
         c.execute("""
-            SELECT model_name,
-                   COUNT(DISTINCT user_id) as unique_users,
+            SELECT ph.model_name,
+                   COUNT(DISTINCT ph.user_id) as unique_users,
                    COUNT(*) as total_requests
-            FROM price_history 
-            WHERE DATE(created_at) = DATE('now')
-            GROUP BY model_name
+            FROM price_history ph
+            WHERE DATE(ph.created_at) = DATE('now')
+            GROUP BY ph.model_name
             ORDER BY unique_users DESC, total_requests DESC
         """)
         stats = [dict(row) for row in c.fetchall()]
@@ -483,12 +504,12 @@ def get_weekly_model_stats():
         conn = get_conn()
         c = conn.cursor()
         c.execute("""
-            SELECT model_name,
-                   COUNT(DISTINCT user_id) as unique_users,
+            SELECT ph.model_name,
+                   COUNT(DISTINCT ph.user_id) as unique_users,
                    COUNT(*) as total_requests
-            FROM price_history 
-            WHERE created_at >= datetime('now', '-7 days')
-            GROUP BY model_name
+            FROM price_history ph
+            WHERE ph.created_at >= datetime('now', '-7 days')
+            GROUP BY ph.model_name
             ORDER BY unique_users DESC, total_requests DESC
         """)
         stats = [dict(row) for row in c.fetchall()]
@@ -504,12 +525,12 @@ def get_monthly_model_stats():
         conn = get_conn()
         c = conn.cursor()
         c.execute("""
-            SELECT model_name,
-                   COUNT(DISTINCT user_id) as unique_users,
+            SELECT ph.model_name,
+                   COUNT(DISTINCT ph.user_id) as unique_users,
                    COUNT(*) as total_requests
-            FROM price_history 
-            WHERE created_at >= datetime('now', '-30 days')
-            GROUP BY model_name
+            FROM price_history ph
+            WHERE ph.created_at >= datetime('now', '-30 days')
+            GROUP BY ph.model_name
             ORDER BY unique_users DESC, total_requests DESC
         """)
         stats = [dict(row) for row in c.fetchall()]
@@ -525,11 +546,11 @@ def get_all_time_model_stats():
         conn = get_conn()
         c = conn.cursor()
         c.execute("""
-            SELECT model_name,
-                   COUNT(DISTINCT user_id) as unique_users,
+            SELECT ph.model_name,
+                   COUNT(DISTINCT ph.user_id) as unique_users,
                    COUNT(*) as total_requests
-            FROM price_history 
-            GROUP BY model_name
+            FROM price_history ph
+            GROUP BY ph.model_name
             ORDER BY unique_users DESC, total_requests DESC
         """)
         stats = [dict(row) for row in c.fetchall()]
@@ -546,16 +567,16 @@ def get_today_stats():
         c = conn.cursor()
 
         c.execute("""
-            SELECT COUNT(DISTINCT user_id) as active_users
-            FROM price_history 
-            WHERE DATE(created_at) = DATE('now')
+            SELECT COUNT(DISTINCT ph.user_id) as active_users
+            FROM price_history ph
+            WHERE DATE(ph.created_at) = DATE('now')
         """)
         active_users = c.fetchone()['active_users']
 
         c.execute("""
             SELECT COUNT(*) as total_requests
-            FROM price_history 
-            WHERE DATE(created_at) = DATE('now')
+            FROM price_history ph
+            WHERE DATE(ph.created_at) = DATE('now')
         """)
         total_requests = c.fetchone()['total_requests']
 
@@ -688,8 +709,3 @@ def debug_database():
 
     conn.close()
     print("======================\n")
-
-
-# Avtomatik ishga tushirish
-if __name__ != "__main__":
-    init_stats_tables()

@@ -26,8 +26,8 @@ async def on_startup(dispatcher):
         logging.error(f"❌ phones.db xato: {e}")
 
     try:
-        from utils.db_api.user_database import init_user_db
-        init_user_db()
+        from utils.db_api.user_database import init_stats_tables
+        init_stats_tables()
         logging.info("✅ stats.db yaratildi!")
     except Exception as e:
         logging.error(f"❌ stats.db xato: {e}")

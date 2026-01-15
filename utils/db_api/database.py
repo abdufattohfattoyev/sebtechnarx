@@ -533,4 +533,3 @@ def clear_all_prices():
     finally:
         conn.close()
 
-

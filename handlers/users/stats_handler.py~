@@ -1,0 +1,186 @@
+# bot.py
+
+
+# payments/payme_utils.py - TUZATILGAN (settings.PAYME_SETTINGS bilan)
+import base64
+import time
+from django.conf import settings
+
+
+def create_payme_link(telegram_id, amount, order_id):
+    MERCHANT_ID = "694e8f36129dca1effbfd550"
+    PAYME_URL = "https://checkout.paycom.uz"
+
+    if not MERCHANT_ID or not order_id:
+        print("❌ Merchant ID yoki order_id yo'q")
+        return ""
+
+    amount_tiyin = int(float(amount) * 100)
+    params_list = [
+        f"m={MERCHANT_ID}",
+        f"ac.order_id={order_id}",
+        f"ac.telegram_id={telegram_id}",
+        f"a={amount_tiyin}",
+    ]
+    params_str = ";".join(params_list)
+    encoded = base64.b64encode(params_str.encode("utf-8")).decode("utf-8")
+    url = f"{PAYME_URL}/{encoded}"
+
+    print("✅ PAYME URL:", url)
+    print("📋 PAYME PARAMS:", params_str)
+    return url
+
+
+
+def check_payme_auth(request):
+    """
+    Payme callback autentifikatsiyasi
+    """
+    try:
+        auth_header = request.META.get("HTTP_AUTHORIZATION", "")
+
+        if not auth_header.startswith("Basic "):
+            return False
+
+        encoded = auth_header.split(" ")[1]
+        decoded = base64.b64decode(encoded).decode("utf-8")
+
+        # ✅ PAYME_SETTINGS dan o'qish
+        payme_settings = getattr(settings, 'PAYME_SETTINGS', {})
+        secret_key = payme_settings.get('SECRET_KEY', '')
+
+        if not secret_key:
+            print("❌ ERROR: PAYME_SECRET_KEY not configured in settings.PAYME_SETTINGS")
+            return False
+
+        return decoded == f"Paycom:{secret_key}"
+
+    except Exception as e:
+        print("❌ PAYME AUTH ERROR:", e)
+        return False
+
+
+def tiyin_to_sum(amount_tiyin):
+    """Tiyinni so'mga o'tkazish"""
+    try:
+        return float(amount_tiyin) / 100
+    except:
+        return 0.0
+
+
+def sum_to_tiyin(amount_sum):
+    """So'mni tiyinga o'tkazish"""
+    try:
+        return int(float(amount_sum) * 100)
+    except:
+        return 0
+
+
+def decode_payme_params(params_base64):
+    """
+    Debug uchun: Base64 → parametrlar
+    """
+    try:
+        decoded = base64.b64decode(params_base64).decode("utf-8")
+        result = {}
+
+        for item in decoded.split(";"):
+            if "=" in item:
+                k, v = item.split("=", 1)
+                result[k] = v
+
+        return result
+    except:
+        return {}
+
+
+def get_payme_settings():
+    """
+    Payme sozlamalarini olish (debug uchun)
+    """
+    payme_settings = getattr(settings, 'PAYME_SETTINGS', {})
+    return {
+        'merchant_id': payme_settings.get('MERCHANT_ID', 'NOT_SET'),
+        'secret_key': '***' if payme_settings.get('SECRET_KEY') else 'NOT_SET',
+        'payme_url': payme_settings.get('PAYME_URL', 'NOT_SET'),
+        'callback_url': payme_settings.get('CALLBACK_URL', 'NOT_SET'),
+        'min_amount': payme_settings.get('MIN_AMOUNT', 0)
+    }
+
+
+import time
+import logging
+import asyncio
+from aiogram import Bot, Dispatcher, types
+from aiogram.utils import executor
+
+from utils.api import PaymentAPI
+
+API_TOKEN = "7600503480:AAHn_oeEq7HSmUL1XsdqNgTzM48Jz4dLvB4"
+
+# Payme sozlamalari
+MERCHANT_ID = "694e8f36129dca1effbfd550"
+SECRET_KEY = "Cv?%Y0yDqmxeDHd4EUhu84DS3biPqCh%Exqz"
+PAYME_URL = "https://checkout.paycom.uz"
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher(bot)
+api = PaymentAPI()  # sizning utils/api.py dagi PaymentAPI
+
+# Oddiy start
+@dp.message_handler(commands=['start'])
+async def start(message: types.Message):
+    await message.answer("Salom! Bu bot Payme to'lovini test qilish uchun.\n"
+                         "To'lov yaratish uchun /pay komandasini bosing.")
+
+
+# To'lov yaratish
+@dp.message_handler(commands=['pay'])
+async def pay(message: types.Message):
+    telegram_id = message.from_user.id
+    # unique order_id yaratish
+    order_id = f"test-{telegram_id}-{int(time.time())}"  # <--- tuzatildi
+    amount = 5000  # so'mda
+
+    payme_url = create_payme_link(
+        telegram_id=telegram_id,
+        amount=amount,
+        order_id=order_id
+    )
+
+    if not payme_url:
+        await message.answer("❌ Payme URL yaratilmadi. Merchant ID va Secret Key ni tekshiring.")
+        return
+
+    await message.answer(f"To'lov havolasi:\n{payme_url}\n\n"
+                         f"To'lov holatini tekshirish uchun /check_{order_id} yozing.")
+
+
+# To'lov holatini tekshirish
+@dp.message_handler(lambda message: message.text.startswith("/check_"))
+async def check_payment(message: types.Message):
+    order_id = message.text.replace("/check_", "")
+    result = await api.check_payment_status(order_id)
+
+    if not result.get('success'):
+        await message.answer(f"❌ To'lov topilmadi yoki xato: {result.get('error')}")
+        return
+
+    state = result.get('state')
+    state_display = result.get('state_display')
+    amount = result.get('amount')
+
+    await message.answer(f"To'lov holati:\n"
+                         f"Order ID: {order_id}\n"
+                         f"Holat: {state_display} ({state})\n"
+                         f"Summa: {amount} so'm")
+
+
+# Botni ishga tushirish
+if __name__ == "__main__":
+    loop = asyncio.get_event_loop()
+    loop.create_task(api.test_connection())  # API ulanishini test qiladi
+    executor.start_polling(dp, skip_updates=True)

@@ -410,8 +410,9 @@ def add_part(model_id, part_name):
 
 # ===================== PRICE FUNKSIYALARI =====================
 
+
 def get_price(model_id, storage, color, sim_type, battery, has_box, damage):
-    """Narxni olish - DEBUG VERSION"""
+    """Narxni olish - TO'G'IRLANGAN VERSIYA"""
     conn = get_conn()
     c = conn.cursor()
 
@@ -421,37 +422,70 @@ def get_price(model_id, storage, color, sim_type, battery, has_box, damage):
     # Box holati
     has_box_int = 1 if has_box == "Bor" or has_box == True else 0
 
-    # Damage ni normallashtirish
-    damage_pct = str(damage).strip()
-    if not damage_pct or damage_pct.lower() in ["yangi", "none", "nan"]:
+    # Damage ni normallashtirish (bot formatiga)
+    if not damage or str(damage).lower() in ["yangi", "none", "nan"]:
         damage_pct = "Yangi"
     else:
-        damage_pct = normalize_damage_format(damage_pct)
+        damage_pct = normalize_damage_format(damage)
 
-    # Qidirish formati
-    search_damage = normalize_for_search(damage_pct)
+    # Kategoriyalarni to'g'rilash
+    storage = str(storage).strip()
+    battery = str(battery).strip()
 
-    # ANIQ QIDIRISH
+    # 1. Birinchi urinish: aniq mos keluvchi narxni qidirish
     c.execute("""
-        SELECT price, damage_pct FROM prices 
+        SELECT price FROM prices 
         WHERE model_id = ? 
         AND storage_size = ? 
         AND color_name = ? 
         AND sim_type = ? 
         AND battery_label = ? 
         AND has_box = ?
+        AND damage_pct = ?
+    """, (model_id, storage, color_name, sim_type, battery, has_box_int, damage_pct))
+
+    row = c.fetchone()
+    if row:
+        conn.close()
+        return row[0]
+
+    # 2. Ikkinchi urinish: damage ni ignore qilish (faqat boshqa parametrlar)
+    c.execute("""
+        SELECT price FROM prices 
+        WHERE model_id = ? 
+        AND storage_size = ? 
+        AND color_name = ? 
+        AND sim_type = ? 
+        AND battery_label = ? 
+        AND has_box = ?
+        ORDER BY 
+            CASE damage_pct 
+                WHEN 'Yangi' THEN 1
+                ELSE 2
+            END
+        LIMIT 1
     """, (model_id, storage, color_name, sim_type, battery, has_box_int))
 
-    matching_rows = c.fetchall()
+    row = c.fetchone()
+    if row:
+        conn.close()
+        return row[0]
 
-    if matching_rows:
-        for row in matching_rows:
-            db_damage = row['damage_pct']
-            normalized_db_damage = normalize_for_search(db_damage)
+    # 3. Uchinchi urinish: color ni ignore qilish
+    c.execute("""
+        SELECT price FROM prices 
+        WHERE model_id = ? 
+        AND storage_size = ? 
+        AND sim_type = ? 
+        AND battery_label = ? 
+        AND has_box = ?
+        LIMIT 1
+    """, (model_id, storage, sim_type, battery, has_box_int))
 
-            if normalized_db_damage == search_damage:
-                conn.close()
-                return row['price']
+    row = c.fetchone()
+    if row:
+        conn.close()
+        return row[0]
 
     conn.close()
     return None

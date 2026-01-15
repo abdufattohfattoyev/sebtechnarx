@@ -1,0 +1,22 @@
+import os
+import requests
+from requests.auth import HTTPBasicAuth
+
+# .env orqali yoki statik
+merchant_id = os.getenv("PAYME_MERCHANT_ID", "694d35331922c3549c145482")
+secret_key = os.getenv("PAYME_SECRET_KEY", "Cv?%Y0yDqmxeDHd4EUhu84DS3biPqCh%Exqz")
+
+url = "https://test.paycom.uz/api/payments/create"
+
+data = {
+    "account": {"order_id": "123456789"},
+    "amount": 50000  # 500 so'm × 100 = 50000 tiyin
+}
+
+response = requests.post(url, json=data, auth=HTTPBasicAuth(merchant_id, secret_key))
+
+print("Status code:", response.status_code)
+print("Response text:", response.text)
+
+if response.status_code == 200:
+    print("JSON:", response.json())
