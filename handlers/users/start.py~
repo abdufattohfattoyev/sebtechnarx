@@ -1342,6 +1342,7 @@ async def show_final_price(message: types.Message, state: FSMContext):
     ✅ Yakuniy narx - MESSAGE
     - free_trial bo'lsa LOCAL dan yechadi
     - free tugasa API paid balansdan yechadi
+    - Holat Ideal/Yangi bo'lmasa ogohlantirish chiqaradi
     """
     from utils.db_api.user_database import check_can_price, use_pricing as use_pricing_local
 
@@ -1352,13 +1353,13 @@ async def show_final_price(message: types.Message, state: FSMContext):
     if 'sim_type' not in data:
         data['sim_type'] = 'physical'
 
-    # Damage display
+    # ✅ Damage display (Holat)
     if not selected:
         damage_display = "Yangi"
     else:
         damage_display = data.get('damage_display', " + ".join([PARTS[k] for k in sorted(selected)]))
 
-    # Narxni hisoblash
+    # ✅ Narxni hisoblash
     try:
         final_price = calculate_final_price(data)
     except Exception as e:
@@ -1367,10 +1368,15 @@ async def show_final_price(message: types.Message, state: FSMContext):
 
     phone_model = f"{data['model_name']} {data['storage']}"
 
-    # Narxni raqamga aylantirish
+    # ✅ Narxni raqamga aylantirish
     price_value = 0
     if isinstance(final_price, str):
-        price_str = final_price.replace(" $", "").replace("$", "").replace(" ", "").replace(",", "")
+        price_str = (
+            final_price.replace(" $", "")
+            .replace("$", "")
+            .replace(" ", "")
+            .replace(",", "")
+        )
         try:
             price_value = int(float(price_str))
         except:
@@ -1386,6 +1392,7 @@ async def show_final_price(message: types.Message, state: FSMContext):
     is_free = False
     balance = 0
 
+    # ✅ 1) Free trial bo'lsa -> LOCAL dan yechamiz
     if free_trials_left > 0:
         local_res = use_pricing_local(
             telegram_id=user_id,
@@ -1410,6 +1417,7 @@ async def show_final_price(message: types.Message, state: FSMContext):
         is_free = True
         free_trials_left = int(local_res.get("free_trials_left", 0) or 0)
 
+        # API balansni ko'rsatish uchun (ixtiyoriy)
         try:
             api_res = await api.get_balance(user_id)
             balance = int(api_res.get("balance", 0) or 0)
@@ -1417,6 +1425,7 @@ async def show_final_price(message: types.Message, state: FSMContext):
             logger.error(f"API balance get error: {e}")
             balance = 0
 
+    # ✅ 2) Free tugasa -> API paid balansdan yechamiz
     else:
         try:
             api_res = await api.use_pricing(
@@ -1447,10 +1456,20 @@ async def show_final_price(message: types.Message, state: FSMContext):
 
     now = uz_now()
 
+    # ✅ Narxni formatlash
     if isinstance(final_price, str):
         display_price = final_price
     else:
         display_price = f"${price_value:,.0f}".replace(",", " ")
+
+    # ✅ Ogohlantirish: faqat Ideal/Yangi bo'lmasa
+    warning_text = ""
+    holat = (damage_display or "").strip().lower()
+    if holat not in ("yangi", "ideal"):
+        warning_text = (
+            "\n\n⚠️ <b>Ogohlantirish:</b>\n"
+            "Vaqtincha <b>almashgan qismlari bor</b> telefonlarni <b>olmayapmiz</b>."
+        )
 
     text = f"""📊 <b>HISOBLASH NATIJASI</b>
 
@@ -1459,7 +1478,7 @@ async def show_final_price(message: types.Message, state: FSMContext):
 🎨 <b>Rang:</b> {color or 'Standart'}
 📞 <b>SIM:</b> {'📲 eSIM' if data.get('sim_type') == 'esim' else '📱 SIM karta'}
 🔋 <b>Batareya:</b> {data['battery']}
-📦 <b>Quti:</b> {'✅ Bor' if data['has_box'] == 'Bor' else '❌ Yo`q'}
+📦 <b>Quti:</b> {'✅ Bor' if data.get('has_box') == 'Bor' else '❌ Yo`q'}
 🔧 <b>Holat:</b> {damage_display}
 
 💰 <b>Narx:</b> <code>{display_price}</code>
@@ -1468,7 +1487,7 @@ async def show_final_price(message: types.Message, state: FSMContext):
 💳 <b>Yangi balans:</b> {balance} ta narxlash
 🎁 <b>Bepul urinishlar qoldi:</b> {free_trials_left} ta
 
-🕒 <b>Sana:</b> {now}
+🕒 <b>Sana:</b> {now}{warning_text}
 """
 
     from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
@@ -1477,6 +1496,7 @@ async def show_final_price(message: types.Message, state: FSMContext):
 
     await message.answer(text, reply_markup=kb, parse_mode="HTML")
     await state.finish()
+
 
 
 # ================ BIZ HAQIMIZDA ================
@@ -1504,10 +1524,10 @@ async def again(message: types.Message, state: FSMContext):
 
 # ================ NOMA'LUM XABARLAR ================
 
-@dp.message_handler(state='*')
-async def unknown_message(message: types.Message):
-    """Noma'lum xabarlarga javob"""
-    await message.answer(
-        "🤖 Iltimos, menyudan birini tanlang yoki /start ni bosing.",
-        reply_markup=main_menu(message.from_user.id in ADMINS)
-    )
+# @dp.message_handler(state='*')
+# async def unknown_message(message: types.Message):
+#     """Noma'lum xabarlarga javob"""
+#     await message.answer(
+#         "🤖 Iltimos, menyudan birini tanlang yoki /start ni bosing.",
+#         reply_markup=main_menu(message.from_user.id in ADMINS)
+#     )
