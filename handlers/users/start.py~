@@ -1446,7 +1446,7 @@ async def show_final_price(message: types.Message, state: FSMContext):
         free_trials_left = 0
 
     now = uz_now()
-    
+
     if isinstance(final_price, str):
         display_price = final_price
     else:
