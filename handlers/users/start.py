@@ -221,15 +221,24 @@ async def auto_check_payment(order_id: str, user_id: int, state: FSMContext):
 # ================ START HANDLER ================
 @dp.message_handler(commands=['start'], state='*')
 async def start(message: types.Message, state: FSMContext):
-    """Start - OPTIMIZED"""
+    """Start - OPTIMIZED (FIXED)"""
     await state.finish()
     user = message.from_user
 
-    # ⚡ PARALLEL API + LOCAL
     try:
-        api_task = api.create_user(user.id, user.full_name or f"User{user.id}", user.username or "")
+        api_task = api.create_user(
+            user.id,
+            user.full_name or f"User{user.id}",
+            user.username or ""
+        )
+
+        # local user yaratish (blocking bo'lishi mumkin, shuning uchun thread)
         local_task = asyncio.to_thread(
-            create_user, user.id, user.full_name or f"User{user.id}", user.username or "", None
+            create_user,
+            user.id,
+            user.full_name or f"User{user.id}",
+            user.username or "",
+            None
         )
 
         api_result, local_result = await asyncio.gather(api_task, local_task, return_exceptions=True)
@@ -240,6 +249,17 @@ async def start(message: types.Message, state: FSMContext):
 
         phone = api_result.get('phone')
         balance = api_result.get('balance', 0)
+
+        # ✅ phone bo'lsa localga ham yozib qo'yamiz (MUHIM FIX)
+        if phone:
+            try:
+                await asyncio.to_thread(
+                    __import__('utils.db_api.user_database', fromlist=['update_phone_number']).update_phone_number,
+                    user.id,
+                    phone
+                )
+            except Exception as e:
+                logger.warning(f"Local phone sync failed: {e}")
 
         free_trials = 5
         if not isinstance(local_result, Exception):
@@ -254,6 +274,7 @@ async def start(message: types.Message, state: FSMContext):
         await message.answer("❌ Xatolik. Qaytadan /start")
         return
 
+    # phone yo'q bo'lsa raqam so'raydi
     if not phone:
         text = f"""👋 <b>{user.full_name}</b>!
 
@@ -267,6 +288,7 @@ async def start(message: types.Message, state: FSMContext):
         await message.answer(text, reply_markup=phone_request_kb(), parse_mode="HTML")
         return
 
+    # phone bor bo'lsa menyu
     text = f"""👋 <b>{user.full_name}</b>!
 
 📱 <b>iPhone narxlash botiga xush kelibsiz!</b>
@@ -276,6 +298,7 @@ async def start(message: types.Message, state: FSMContext):
 
 <b>⬇️ Menyudan tanlang:</b>"""
     await message.answer(text, reply_markup=main_menu(user.id in ADMINS), parse_mode="HTML")
+
 
 
 # ================ PHONE HANDLER ================

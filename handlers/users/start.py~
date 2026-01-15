@@ -961,19 +961,45 @@ async def parts_callback(call: types.CallbackQuery, state: FSMContext):
 
 
 # ================ FINAL PRICE - CALLBACK ================
+# ================ FINAL PRICE - CALLBACK (TO'G'RILANGAN) ================
 async def show_final_price_from_callback(call: types.CallbackQuery, state: FSMContext):
-    """Yakuniy narx - CALLBACK - OPTIMIZED"""
+    """Yakuniy narx - CALLBACK - OPTIMIZED & SAFE"""
     data = await state.get_data()
-    selected = data.get('selected_parts', [])
-    color = data.get('color', '')
 
-    if 'sim_type' not in data:
-        data['sim_type'] = 'physical'
+    # ⚡ CRITICAL: Barcha zarur ma'lumotlarni tekshirish
+    required_fields = ['model_name', 'model_id', 'storage']
+    for field in required_fields:
+        if field not in data:
+            await call.message.answer(
+                "❌ Jarayon buzildi. Qaytadan boshlang:\n📱 Telefon narxlash",
+                reply_markup=main_menu(call.from_user.id in ADMINS)
+            )
+            await state.finish()
+            return
+
+    # Default qiymatlar
+    selected = data.get('selected_parts', [])
+    color = data.get('color', 'Standart')
+    battery = data.get('battery', '100%')
+    sim_type = data.get('sim_type', 'physical')
+    has_box = data.get('has_box', "Yo'q")
 
     damage_display = "Yangi" if not selected else data.get('damage_display',
                                                            " + ".join([PARTS[k] for k in sorted(selected)]))
 
-    final_price = calculate_final_price(data)
+    # Safe data dict yaratish
+    safe_data = {
+        'model_id': data['model_id'],
+        'model_name': data['model_name'],
+        'storage': data['storage'],
+        'color': color,
+        'battery': battery,
+        'sim_type': sim_type,
+        'has_box': has_box,
+        'selected_parts': selected
+    }
+
+    final_price = calculate_final_price(safe_data)
     phone_model = f"{data['model_name']} {data['storage']}"
 
     # Price value
@@ -998,9 +1024,8 @@ async def show_final_price_from_callback(call: types.CallbackQuery, state: FSMCo
     # Free trial
     if free_trials > 0:
         local_res = use_pricing_local(
-            user_id, phone_model, data.get('storage', ''), color,
-            data.get('battery', '100%'), data.get('sim_type', 'physical'),
-            data.get('has_box', "Yo'q"), damage_display, price_value
+            user_id, phone_model, data['storage'], color,
+            battery, sim_type, has_box, damage_display, price_value
         )
 
         if not local_res.get("success"):
@@ -1041,10 +1066,10 @@ async def show_final_price_from_callback(call: types.CallbackQuery, state: FSMCo
 
 📱 <b>Model:</b> {data['model_name']}
 💾 <b>Xotira:</b> {data['storage']}
-🎨 <b>Rang:</b> {color or 'Standart'}
-📞 <b>SIM:</b> {'📲 eSIM' if data.get('sim_type') == 'esim' else '📱 SIM'}
-🔋 <b>Batareya:</b> {data['battery']}
-📦 <b>Quti:</b> {'✅ Bor' if data['has_box'] == 'Bor' else '❌ Yo`q'}
+🎨 <b>Rang:</b> {color}
+📞 <b>SIM:</b> {'📲 eSIM' if sim_type == 'esim' else '📱 SIM'}
+🔋 <b>Batareya:</b> {battery}
+📦 <b>Quti:</b> {'✅ Bor' if has_box == 'Bor' else '❌ Yo`q'}
 🔧 <b>Holat:</b> {damage_display}
 
 💰 <b>Narx:</b> <code>{display_price}</code>
