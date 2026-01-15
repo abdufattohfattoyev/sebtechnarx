@@ -1,4 +1,4 @@
-# app.py
+# app.py - PostgreSQL VERSION
 import logging
 import asyncio
 from aiogram import executor
@@ -8,77 +8,180 @@ from loader import dp, bot
 import middlewares, filters, handlers
 from data.config import ADMINS
 
+# ============================================
+# LOGGING KONFIGURATSIYASI
+# ============================================
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("bot.log", encoding='utf-8'),
+        logging.StreamHandler()
+    ]
 )
+
+logger = logging.getLogger(__name__)
 
 
 async def on_startup(dispatcher):
     """Bot ishga tushganda"""
 
-    # Database yaratish
-    try:
-        from utils.db_api.database import init_db
-        init_db()
-        logging.info("✅ phones.db yaratildi yoki ulandi")
-    except Exception as e:
-        logging.error(f"❌ phones.db xato: {e}")
+    logger.info("=" * 60)
+    logger.info("🚀 BOT ISHGA TUSHMOQDA...")
+    logger.info("=" * 60)
 
+    # ============================================
+    # 1. POSTGRESQL PHONES DATABASE
+    # ============================================
+    try:
+        from utils.db_api.database import init_db, test_connection
+
+        # Avval ulanishni tekshirish
+        logger.info("🔄 PostgreSQL ga ulanish tekshirilmoqda...")
+        if test_connection():
+            logger.info("✅ PostgreSQL ulanishi muvaffaqiyatli!")
+
+            # Database yaratish
+            logger.info("🔄 Database strukturasi tekshirilmoqda...")
+            init_db()
+            logger.info("✅ phones_db tayyor!")
+        else:
+            logger.error("❌ PostgreSQL ga ulanib bo'lmadi!")
+            logger.error("⚠️ .env faylni tekshiring!")
+            raise Exception("PostgreSQL connection failed")
+
+    except ImportError as e:
+        logger.error(f"❌ database_postgres.py topilmadi: {e}")
+        logger.error("📁 utils/db_api/ papkasida database_postgres.py borligini tekshiring")
+        raise
+    except Exception as e:
+        logger.error(f"❌ phones_db xato: {e}")
+        logger.error("💡 PostgreSQL ishlab turganini tekshiring:")
+        logger.error("   sudo systemctl status postgresql")
+        raise
+
+    # ============================================
+    # 2. USER STATISTICS DATABASE (ixtiyoriy)
+    # ============================================
     try:
         from utils.db_api.user_database import init_user_db
         init_user_db()
-        logging.info("✅ stats.db yaratildi!")
+        logger.info("✅ stats.db yaratildi!")
+    except ImportError:
+        logger.warning("⚠️ user_database.py topilmadi, statistika o'chirilgan")
     except Exception as e:
-        logging.error(f"❌ stats.db xato: {e}")
+        logger.warning(f"⚠️ stats.db xato (kritik emas): {e}")
 
-    # Adminlarga xabar - XATO BILAN KURASHISH
+    # ============================================
+    # 3. ADMINLARGA XABAR YUBORISH
+    # ============================================
+    logger.info("📨 Adminlarga xabar yuborilmoqda...")
+    success_count = 0
+
     for admin_id in ADMINS:
         try:
             await asyncio.wait_for(
-                bot.send_message(admin_id, "🤖 Bot ishga tushdi!"),
-                timeout=10  # 10 soniya timeout
+                bot.send_message(
+                    admin_id,
+                    "🤖 <b>Bot ishga tushdi!</b>\n\n"
+                    "🗄️ Database: PostgreSQL\n"
+                    "📊 Status: Tayyor",
+                    parse_mode="HTML"
+                ),
+                timeout=10
             )
+            success_count += 1
+            logger.info(f"✅ Admin {admin_id} ga xabar yuborildi")
         except asyncio.TimeoutError:
-            logging.warning(f"⚠️ Admin {admin_id} ga xabar yuborish timeout")
+            logger.warning(f"⚠️ Admin {admin_id} ga xabar yuborish timeout")
         except (TelegramAPIError, NetworkError) as e:
-            logging.warning(f"⚠️ Admin {admin_id} ga xabar yuborib bo'lmadi: {e}")
+            logger.warning(f"⚠️ Admin {admin_id} ga ulanib bo'lmadi: {e}")
         except Exception as e:
-            logging.error(f"❌ Noma'lum xato: {e}")
+            logger.error(f"❌ Admin {admin_id} ga xabar yuborishda xato: {e}")
 
-    logging.info("🚀 Bot muvaffaqiyatli ishga tushdi!")
+    logger.info(f"📨 {success_count}/{len(ADMINS)} ta adminga xabar yuborildi")
+
+    # ============================================
+    # 4. YAKUNIY XABAR
+    # ============================================
+    logger.info("=" * 60)
+    logger.info("✅ BOT MUVAFFAQIYATLI ISHGA TUSHDI!")
+    logger.info("🗄️  Database: PostgreSQL")
+    logger.info("📊 Polling: Faol")
+    logger.info("=" * 60)
 
 
 async def on_shutdown(dispatcher):
     """Bot to'xtaganda"""
 
-    # Adminlarga xabar
+    logger.warning("=" * 60)
+    logger.warning("⛔ BOT TO'XTATILMOQDA...")
+    logger.warning("=" * 60)
+
+    # ============================================
+    # 1. ADMINLARGA XABAR
+    # ============================================
     for admin_id in ADMINS:
         try:
-            await bot.send_message(admin_id, "⛔ Bot to'xtatildi!")
+            await asyncio.wait_for(
+                bot.send_message(
+                    admin_id,
+                    "⛔ <b>Bot to'xtatildi!</b>",
+                    parse_mode="HTML"
+                ),
+                timeout=5
+            )
         except:
             pass
 
-    logging.warning("⛔ Bot to'xtatildi!")
+    # ============================================
+    # 2. CONNECTION'LARNI YOPISH
+    # ============================================
+    logger.info("🔄 Connection'lar yopilmoqda...")
 
-    # Connection'larni yopish
-    await bot.close()
-
-
-if __name__ == '__main__':
-    # ✅ YANGI: Exception handling bilan polling
     try:
+        await bot.close()
+        logger.info("✅ Bot connection yopildi")
+    except Exception as e:
+        logger.error(f"❌ Bot connection yopishda xato: {e}")
+
+    # PostgreSQL connection'larni yopish kerak emas
+    # Chunki har bir funksiya o'z connection'ini ochadi va yopadi
+
+    logger.warning("=" * 60)
+    logger.warning("✅ BOT TO'LIQ TO'XTATILDI!")
+    logger.warning("=" * 60)
+
+
+def main():
+    """Bot ishga tushirish"""
+    try:
+        logger.info("🚀 Executor ishga tushmoqda...")
+
         executor.start_polling(
             dp,
             on_startup=on_startup,
             on_shutdown=on_shutdown,
-            skip_updates=True,
+            skip_updates=True,  # Eski xabarlarni o'tkazib yuborish
             timeout=60,  # Polling timeout
             relax=0.1,  # Requestlar orasida pauza
-            fast=False  # Fast mode o'chirish
+            fast=False  # Fast mode o'chirish (barqarorlik uchun)
         )
+
     except (KeyboardInterrupt, SystemExit):
-        logging.info("✋ Bot to'xtatildi (Ctrl+C)")
+        logger.info("✋ Bot to'xtatildi (Ctrl+C)")
+
     except Exception as e:
-        logging.critical(f"💥 KRITIK XATO: {e}")
+        logger.critical("=" * 60)
+        logger.critical(f"💥 KRITIK XATO: {e}")
+        logger.critical("=" * 60)
+
+        # Xatolik tafsilotlarini yozish
+        import traceback
+        logger.critical(traceback.format_exc())
+
         raise
+
+
+if __name__ == '__main__':
+    main()

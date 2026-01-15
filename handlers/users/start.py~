@@ -1,10 +1,11 @@
-# handlers/users/start.py - TO'LIQ XATOSIZ VERSIYA
+# handlers/users/start.py - SUPER OPTIMIZED VERSION ⚡ (QISMLAR BILAN)
+
 import asyncio
 import logging
 import re
 from datetime import datetime
-from datetime import datetime
-import pytz
+from zoneinfo import ZoneInfo
+
 from aiogram import types
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
@@ -14,8 +15,8 @@ from handlers.users.payment import PaymentState
 from loader import dp, bot
 from keyboards.default.knopkalar import (
     main_menu, create_keyboard,
-    parts_choice_kb, create_parts_inline_kb,
-    balance_menu_kb, admin_kb, phone_request_kb, back_kb
+    create_parts_inline_kb,
+    balance_menu_kb, admin_kb, phone_request_kb
 )
 from keyboards.inline.payment_keyboards import (
     create_tariffs_inline_keyboard,
@@ -26,23 +27,13 @@ from utils.api import api
 from utils.db_api.database import get_models, get_storages, get_colors, get_batteries, get_price
 from utils.db_api.user_database import (
     check_can_price,
-    update_phone_number,
     create_user,
     get_user_balance,
-    get_user
+    use_pricing as use_pricing_local
 )
 
-from datetime import datetime
-from zoneinfo import ZoneInfo
-
-
-def uz_now():
-    return datetime.now(ZoneInfo("Asia/Tashkent")).strftime("%d.%m.%Y %H:%M")
-
-# ================ LOGGER ================
+# ================ CONSTANTS ================
 logger = logging.getLogger(__name__)
-
-# ================ KONSTANTALAR ================
 
 PARTS = {
     'battery': 'Batareyka',
@@ -68,28 +59,27 @@ ABOUT_TEXT = f"""✨ <b>SEPTECH</b>
 Real savdo tajribasi + bozor tahlillari asosida ishlaydi.
 
 <b>Nima beradi?</b>
-• real bozor qiymati (model / xotira / holat bo'yicha)
-• adolatli, tushunarli standart
-• <b>inson aralashuvisiz</b> — faqat algoritm
+- real bozor qiymati (model / xotira / holat bo'yicha)
+- adolatli, tushunarli standart
+- <b>inson aralashuvisiz</b> — faqat algoritm
 
 🔎 <b>Eslatma:</b> narx bozor bilan birga o'zgaradi, algoritm esa barcha uchun bir xil.
 
 <b>Qadriyatlar:</b> Shaffoflik • Aniqlik • Ishonch
 
 📣 <b>Rasmiy sahifalar:</b>
-• Telegram: <a href="{TELEGRAM_CHANNEL}">Kanalga o'tish</a>
-• Instagram: <a href="{INSTAGRAM_LINK}">Sahifani ko'rish</a>
+- Telegram: <a href="{TELEGRAM_CHANNEL}">Kanalga o'tish</a>
+- Instagram: <a href="{INSTAGRAM_LINK}">Sahifani ko'rish</a>
 
 📞 <b>Call-center:</b>
-• {CALLCENTER_1}
-• {CALLCENTER_2}
+- {CALLCENTER_1}
+- {CALLCENTER_2}
 
 <i>SEPTECH — telefon narxining yangi standarti.</i>
 """
 
 
-# ================ HOLATLAR ================
-
+# ================ STATES ================
 class UserState(StatesGroup):
     waiting_phone = State()
     waiting_model = State()
@@ -102,407 +92,250 @@ class UserState(StatesGroup):
     waiting_parts = State()
 
 
-# ================ YORDAMCHI FUNKSIYALAR ================
+# ================ HELPER FUNCTIONS ================
+def uz_now():
+    """Tashkent vaqti"""
+    return datetime.now(ZoneInfo("Asia/Tashkent")).strftime("%d.%m.%Y %H:%M")
+
 
 def should_ask_sim_type(model_name: str) -> bool:
-    """iPhone 14 va undan yangi modellar uchun SIM turini so'rash"""
+    """iPhone 14+ uchun SIM so'rash"""
     if not model_name:
         return False
-
-    model_lower = model_name.lower()
-    match = re.search(r'iphone\s+(\d+)', model_lower)
-
-    if match:
-        iphone_number = int(match.group(1))
-        return iphone_number >= 14
-
-    return False
+    match = re.search(r'iphone\s+(\d+)', model_name.lower())
+    return match and int(match.group(1)) >= 14
 
 
 def calculate_final_price(data: dict) -> str:
-    """Yakuniy narxni hisoblash"""
+    """Yakuniy narx hisoblash"""
     try:
-        model_id = data.get('model_id')
-        storage = data.get('storage', '')
-        color = data.get('color', '')
-        sim_type = data.get('sim_type', 'physical')
-        battery = data.get('battery', '100%')
-        has_box = data.get('has_box', 'Yo\'q')
         selected_parts = data.get('selected_parts', [])
-
-        if not selected_parts:
-            damage = "Yangi"
-        else:
-            damage = "+".join(sorted(selected_parts))
+        damage = "Yangi" if not selected_parts else "+".join(sorted(selected_parts))
 
         price = get_price(
-            model_id=model_id,
-            storage=storage,
-            color=color,
-            sim_type=sim_type,
-            battery=battery,
-            has_box=has_box,
+            model_id=data.get('model_id'),
+            storage=data.get('storage', ''),
+            color=data.get('color', ''),
+            sim_type=data.get('sim_type', 'physical'),
+            battery=data.get('battery', '100%'),
+            has_box=data.get('has_box', 'Yo\'q'),
             damage=damage
         )
 
-        if price is not None:
-            if isinstance(price, (int, float)):
-                return f"{price:,.0f} $".replace(",", " ")
-            return str(price)
+        if price:
+            return f"{price:,.0f} $".replace(",", " ") if isinstance(price, (int, float)) else str(price)
 
+        # Fallback
         base_price = get_price(
-            model_id=model_id,
-            storage=storage,
-            color=color,
-            sim_type=sim_type,
-            battery=battery,
-            has_box=has_box,
+            model_id=data.get('model_id'),
+            storage=data.get('storage', ''),
+            color=data.get('color', ''),
+            sim_type=data.get('sim_type', 'physical'),
+            battery=data.get('battery', '100%'),
+            has_box=data.get('has_box', 'Yo\'q'),
             damage="Yangi"
         )
 
-        if base_price is not None and isinstance(base_price, (int, float)):
-            part_discounts = {
-                'battery': 0.02, 'back_cover': 0.03, 'face_id': 0.05,
-                'glass': 0.04, 'screen': 0.08, 'camera': 0.05,
-                'broken': 0.10, 'body': 0.06,
-            }
-
-            total_discount = sum(part_discounts.get(part, 0) for part in selected_parts)
-            total_discount = min(total_discount, 0.25)
-
-            final_price = base_price * (1 - total_discount)
-            return f"{final_price:,.0f} $".replace(",", " ")
+        if base_price and isinstance(base_price, (int, float)):
+            discount = sum([0.02, 0.03, 0.05, 0.04, 0.08, 0.05, 0.10, 0.06][i]
+                           for i, p in enumerate(
+                ['battery', 'back_cover', 'face_id', 'glass', 'screen', 'camera', 'broken', 'body'])
+                           if p in selected_parts)
+            final = base_price * (1 - min(discount, 0.25))
+            return f"{final:,.0f} $".replace(",", " ")
 
         return "Narx topilmadi"
-
     except Exception as e:
-        logger.error(f"Narx hisoblashda xato: {e}", exc_info=True)
+        logger.error(f"Price calculation error: {e}")
         return "Hisoblash xatosi"
 
 
 def sort_models_naturally(models):
     """Modellarni tartibga solish"""
+    def extract_info(name):
+        lower = name.lower()
+        if 'xs max' in lower: return (10.5, 2)
+        if 'xs' in lower: return (10.5, 1)
+        if 'xr' in lower: return (10.3, 0)
+        if lower.endswith(' x'): return (10, 0)
 
-    def extract_model_info(name):
-        name_lower = name.lower()
-        if 'xs max' in name_lower:
-            return (10.5, 2)
-        elif 'xs' in name_lower:
-            return (10.5, 1)
-        elif 'xr' in name_lower:
-            return (10.3, 0)
-        elif name_lower.endswith(' x'):
-            return (10, 0)
-
-        match = re.search(r'iphone\s+(\d+)', name_lower)
+        match = re.search(r'iphone\s+(\d+)', lower)
         if match:
-            number = int(match.group(1))
-            if 'pro max' in name_lower:
-                priority = 3
-            elif 'plus' in name_lower:
-                priority = 3
-            elif 'pro' in name_lower:
-                priority = 2
-            elif 'mini' in name_lower:
-                priority = 1
-            else:
-                priority = 0
-            return (number, priority)
+            num = int(match.group(1))
+            pri = 3 if 'pro max' in lower or 'plus' in lower else 2 if 'pro' in lower else 1 if 'mini' in lower else 0
+            return (num, pri)
         return (0, 0)
 
-    return sorted(models, key=lambda x: extract_model_info(x['name']), reverse=True)
+    return sorted(models, key=lambda x: extract_info(x['name']), reverse=True)
 
 
 def sort_storages_naturally(storages):
     """Xotiralarni tartibga solish"""
-
-    def extract_size(size_str):
-        match = re.search(r'(\d+)', size_str)
+    def extract_size(s):
+        match = re.search(r'(\d+)', s)
         return int(match.group(1)) if match else 0
-
     return sorted(storages, key=lambda x: extract_size(x['size']), reverse=True)
 
 
 def sort_batteries_naturally(batteries):
     """Batareyalarni tartibga solish"""
-
-    def extract_battery_percent(label):
-        match = re.search(r'(\d+)', label)
+    def extract_percent(l):
+        match = re.search(r'(\d+)', l)
         return int(match.group(1)) if match else 0
-
-    return sorted(batteries, key=lambda x: extract_battery_percent(x['label']), reverse=True)
-
-
-def html_to_plain(html: str) -> str:
-    """HTML taglarni olib tashlab, typing uchun oddiy tekst qaytaradi"""
-    HTML_TAG_RE = re.compile(r"<[^>]+>")
-    text = re.sub(HTML_TAG_RE, "", html)
-    text = text.replace("&nbsp;", " ")
-    return text
+    return sorted(batteries, key=lambda x: extract_percent(x['label']), reverse=True)
 
 
-async def safe_edit(sent, text: str, parse_mode=None):
-    """Xavfsiz edit - MessageNotModified xatosini oldini olish"""
-    current_text = getattr(sent, "html_text", None) or getattr(sent, "text", None) or ""
-    if current_text == text:
-        return
-    try:
-        await sent.edit_text(text, parse_mode=parse_mode)
-    except MessageNotModified:
-        pass
-
-
-async def typewriter_two_speed_plain_then_html(
-        message,
-        html_text: str,
-        fast_until_plain: str = "Bozorni his qiladigan narx. Qarorni oson qiladigan standart.",
-        fast_delay: float = 0.01,
-        slow_delay: float = 0.05,
-        fast_chunk: int = 16,
-        slow_chunk: int = 10,
-):
-    """Typing effect bilan xabar yuborish"""
-    plain = html_to_plain(html_text)
-
-    idx = plain.find(fast_until_plain)
-    fast_end = idx + len(fast_until_plain) if idx != -1 else min(90, len(plain))
-
-    start_len = min(fast_end, len(plain))
-    sent = await message.answer(plain[:start_len])
-
-    fast_limit = min(start_len + 120, len(plain))
-    for i in range(start_len, fast_limit, fast_chunk):
-        await safe_edit(sent, plain[:i + fast_chunk])
-        await asyncio.sleep(fast_delay)
-
-    for i in range(fast_limit, len(plain), slow_chunk):
-        await safe_edit(sent, plain[:i + slow_chunk])
-        await asyncio.sleep(slow_delay)
-
-    await safe_edit(sent, html_text, parse_mode="HTML")
-    return sent
+def parts_choice_kb():
+    """Qismlar tanlash tugmalari"""
+    from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.row(KeyboardButton("✅ Ha"), KeyboardButton("❌ Yo'q"))
+    kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
+    return kb
 
 
 async def auto_check_payment(order_id: str, user_id: int, state: FSMContext):
     """Avtomatik to'lov tekshirish"""
     try:
-        logger.info(f"Auto check payment started: order_id={order_id}, user={user_id}")
         await asyncio.sleep(10)
-
         current_state = await state.get_state()
         if current_state != PaymentState.waiting_check.state:
-            logger.info(f"State changed, stopping auto check: order_id={order_id}")
             return
 
         result = await api.check_payment_status(order_id)
+        if result.get('success') and result.get('has_payment') and result.get('state') == 2:
+            text = f"""✅ <b>TO'LOV MUVAFFAQIYATLI!</b>
 
-        if result.get('success') and result.get('has_payment'):
-            if result.get('state') == 2:
-                logger.info(f"Payment completed: order_id={order_id}, user={user_id}")
-
-                text = f"""✅ <b>TO'LOV MUVAFFAQIYATLI!</b>
-
-💰 <b>Balans:</b> {result.get('balance', 0)} ta narxlash
+💰 <b>Balans:</b> {result.get('balance', 0)} ta
 📦 <b>Qo'shildi:</b> {result.get('count', 0)} ta
 💵 <b>Summa:</b> {result.get('amount', 0):,.0f} so'm
 
-🎉 Endi siz telefonlarni narxlashingiz mumkin!
+🎉 Endi narxlashingiz mumkin!
 """
-                await bot.send_message(chat_id=user_id, text=text, parse_mode="HTML")
-                await state.finish()
-
+            await bot.send_message(user_id, text, parse_mode="HTML")
+            await state.finish()
     except Exception as e:
-        logger.error(f"Auto check payment error: order_id={order_id}, error={e}", exc_info=True)
+        logger.error(f"Auto check error: {e}")
 
 
-# ================ START VA ASOSIY HANDLERLAR ================
-
+# ================ START HANDLER ================
 @dp.message_handler(commands=['start'], state='*')
 async def start(message: types.Message, state: FSMContext):
-    """Start komandasi - API bilan user yaratish"""
+    """Start - OPTIMIZED"""
     await state.finish()
-
     user = message.from_user
-    logger.info(f"👤 User started bot: {user.id} - {user.full_name}")
 
-    # ✅ 1. USER YARATISH (BACKEND API ORQALI)
+    # ⚡ PARALLEL API + LOCAL
     try:
-        result = await api.create_user(
-            telegram_id=user.id,
-            full_name=user.full_name or f"User{user.id}",
-            username=user.username or ""
+        api_task = api.create_user(user.id, user.full_name or f"User{user.id}", user.username or "")
+        local_task = asyncio.to_thread(
+            create_user, user.id, user.full_name or f"User{user.id}", user.username or "", None
         )
 
-        if not result.get('success'):
-            logger.error(f"❌ User creation failed: {result.get('error')}")
-            await message.answer(
-                "❌ Xatolik yuz berdi. Iltimos, qaytadan /start bosing.",
-                parse_mode="HTML"
-            )
+        api_result, local_result = await asyncio.gather(api_task, local_task, return_exceptions=True)
+
+        if isinstance(api_result, Exception):
+            await message.answer("❌ Server xato. Qaytadan /start")
             return
 
-        # ✅ BACKEND'DAN PHONE VA BALANS OLISH
-        phone_number = result.get('phone')  # ✅ TO'G'RI: 'phone' (phone_number emas!)
-        balance = result.get('balance', 0)
+        phone = api_result.get('phone')
+        balance = api_result.get('balance', 0)
 
-        logger.info(f"✅ User created/updated: {user.id}, phone: {phone_number}, balance: {balance}")
+        free_trials = 5
+        if not isinstance(local_result, Exception):
+            try:
+                local_data = get_user_balance(user.id)
+                free_trials = local_data.get('free_trials_left', 5)
+            except:
+                pass
 
     except Exception as e:
-        logger.error(f"❌ API error on start: {e}", exc_info=True)
-        await message.answer(
-            "❌ Serverga ulanishda xatolik. Iltimos, keyinroq /start bosing.",
-            parse_mode="HTML"
-        )
+        logger.error(f"Start error: {e}")
+        await message.answer("❌ Xatolik. Qaytadan /start")
         return
 
-    # ✅ 2. LOCAL DB'DA HAM USER YARATISH/YANGILASH (5 ta bepul urinish bilan)
-    try:
-        from utils.db_api.user_database import create_user as create_local_user, get_user_balance as get_local_balance
-
-        # Local DB'da user yaratish yoki yangilash
-        local_result = create_local_user(
-            telegram_id=user.id,
-            full_name=user.full_name or f"User{user.id}",
-            username=user.username or "",
-            phone_number=phone_number  # Backend'dan olingan telefon
-        )
-
-        if local_result.get('success'):
-            # Local DB'dan bepul urinishlarni olish
-            local_data = get_local_balance(user.id)
-            free_trials = local_data.get('free_trials_left', 5)
-
-            if local_result.get('is_new'):
-                logger.info(f"🎁 Yangi user local DB'da yaratildi: {user.id}, free_trials: {free_trials}")
-            else:
-                logger.info(f"♻️ User local DB'da yangilandi: {user.id}, free_trials: {free_trials}")
-        else:
-            logger.warning(f"⚠️ Local DB user creation failed: {local_result.get('error')}")
-            free_trials = 5
-
-    except Exception as e:
-        logger.warning(f"⚠️ Local DB error: {e}")
-        free_trials = 5
-
-    # ✅ 3. TELEFON RAQAM TEKSHIRISH
-    if not phone_number:
-        # Telefon so'rash
-        text = f"""👋 Assalomu alaykum, <b>{user.full_name}</b>!
+    if not phone:
+        text = f"""👋 <b>{user.full_name}</b>!
 
 📱 <b>iPhone narxlash botiga xush kelibsiz!</b>
 
-🎁 <b>Bepul urinishlar:</b> {free_trials} ta
-💰 <b>Balans:</b> {balance} ta narxlash
+🎁 <b>Bepul:</b> {free_trials} ta
+💰 <b>Balans:</b> {balance} ta
 
-⬇️ <b>Davom etish uchun telefon raqamingizni yuboring:</b>"""
-
+⬇️ <b>Telefon raqamingizni yuboring:</b>"""
         await UserState.waiting_phone.set()
         await message.answer(text, reply_markup=phone_request_kb(), parse_mode="HTML")
         return
 
-    # ✅ 4. ASOSIY MENYU (TELEFON BOR BO'LSA)
-    text = f"""👋 Assalomu alaykum, <b>{user.full_name}</b>!
+    text = f"""👋 <b>{user.full_name}</b>!
 
 📱 <b>iPhone narxlash botiga xush kelibsiz!</b>
 
-🎁 <b>Bepul urinishlar:</b> {free_trials} ta
-💰 <b>Balans:</b> {balance} ta narxlash
+🎁 <b>Bepul:</b> {free_trials} ta
+💰 <b>Balans:</b> {balance} ta
 
-<b>⬇️ Quyidagi menyulardan birini tanlang:</b>"""
-
-    await message.answer(
-        text,
-        reply_markup=main_menu(user.id in ADMINS),
-        parse_mode="HTML"
-    )
+<b>⬇️ Menyudan tanlang:</b>"""
+    await message.answer(text, reply_markup=main_menu(user.id in ADMINS), parse_mode="HTML")
 
 
+# ================ PHONE HANDLER ================
 @dp.message_handler(content_types=['contact'], state=UserState.waiting_phone)
 async def receive_phone(message: types.Message, state: FSMContext):
-    """Telefon raqamini qabul qilish - FAQAT contact orqali"""
-
-    # ✅ 1. TEKSHIRISH
+    """Telefon qabul qilish - OPTIMIZED"""
     if message.contact.user_id != message.from_user.id:
-        await message.answer(
-            "❌ Iltimos, O'Z telefon raqamingizni yuboring!\n\n📱 Quyidagi tugmani bosing:",
-            reply_markup=phone_request_kb(),
-            parse_mode="HTML"
-        )
+        await message.answer("❌ O'Z telefon raqamingizni yuboring!", reply_markup=phone_request_kb())
         return
 
-    phone_number = message.contact.phone_number
-    if not phone_number.startswith('+'):
-        phone_number = '+' + phone_number
+    phone = message.contact.phone_number
+    if not phone.startswith('+'):
+        phone = '+' + phone
 
-    # ✅ 2. BACKEND API'GA TELEFON YUBORISH
     try:
-        result = await api.update_phone(message.from_user.id, phone_number)
+        api_task = api.update_phone(message.from_user.id, phone)
+        local_task = asyncio.to_thread(
+            lambda: __import__('utils.db_api.user_database', fromlist=['update_phone_number']).update_phone_number(
+                message.from_user.id, phone)
+        )
 
-        if not result.get('success'):
-            logger.error(f"❌ Backend phone update failed: {result.get('error')}")
-            await message.answer(
-                "❌ Telefon raqamini saqlashda xatolik. Qaytadan /start bosing.",
-                parse_mode="HTML"
-            )
+        api_result, _ = await asyncio.gather(api_task, local_task, return_exceptions=True)
+
+        if isinstance(api_result, Exception) or not api_result.get('success'):
+            await message.answer("❌ Xatolik. Qaytadan /start")
             await state.finish()
             return
 
-        logger.info(f"✅ Phone updated in backend: {message.from_user.id} -> {phone_number}")
-
     except Exception as e:
-        logger.error(f"❌ Backend phone update error: {e}")
-        await message.answer(
-            "❌ Serverga ulanishda xatolik. Qaytadan /start bosing.",
-            parse_mode="HTML"
-        )
+        logger.error(f"Phone update error: {e}")
+        await message.answer("❌ Xatolik. Qaytadan /start")
         await state.finish()
         return
 
-    # ✅ 3. LOCAL DB'GA HAM SAQLASH (sinxronizatsiya uchun)
-    try:
-        from utils.db_api.user_database import update_phone_number
-        update_phone_number(message.from_user.id, phone_number)
-        logger.info(f"✅ Phone also saved in local DB: {message.from_user.id}")
-    except Exception as e:
-        logger.warning(f"⚠️ Local DB phone update error: {e}")
-        # Backend'da saqlanganligini bildik, davom ettiramiz
-
-    # ✅ 4. BALANS OLISH (Backend API'dan)
     try:
         balance_result = await api.get_balance(message.from_user.id)
         balance = balance_result.get('balance', 0)
-    except Exception as e:
-        logger.error(f"❌ Balance fetch error: {e}")
+    except:
         balance = 0
 
-    # ✅ 5. BEPUL URINISHLAR (Local DB'dan)
     try:
-        from utils.db_api.user_database import get_user_balance as get_local_balance
-        local_data = get_local_balance(message.from_user.id)
+        local_data = get_user_balance(message.from_user.id)
         free_trials = local_data.get('free_trials_left', 5)
-    except Exception as e:
-        logger.warning(f"⚠️ Local DB error: {e}")
+    except:
         free_trials = 5
 
-    # ✅ 6. MODELLAR SONINI OLISH
     try:
-        from utils.db_api.database import get_models
         models = get_models()
-        models_text = f"✅ <b>{len(models)}</b> ta model mavjud\n"
-    except Exception as e:
-        logger.warning(f"⚠️ Models fetch error: {e}")
+        models_text = f"✅ <b>{len(models)}</b> ta model\n"
+    except:
         models_text = ""
 
-    # ✅ 7. MUVAFFAQIYATLI XABAR
-    text = f"""✅ <b>Telefon raqami qabul qilindi!</b>
+    text = f"""✅ <b>Telefon qabul qilindi!</b>
 
-📞 <b>Raqam:</b> {phone_number}
+📞 {phone}
 
-🎁 <b>Bepul urinishlar:</b> {free_trials} ta
-💰 <b>Balans:</b> {balance} ta narxlash
+🎁 <b>Bepul:</b> {free_trials} ta
+💰 <b>Balans:</b> {balance} ta
 {models_text}
-<b>⬇️ Quyidagi menyulardan birini tanlang:</b>
-"""
+<b>⬇️ Menyudan tanlang:</b>"""
 
     await state.finish()
     await message.answer(text, reply_markup=main_menu(message.from_user.id in ADMINS), parse_mode="HTML")
@@ -510,31 +343,23 @@ async def receive_phone(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=UserState.waiting_phone)
 async def phone_state_handler(message: types.Message, state: FSMContext):
-    """Telefon raqami kutilayotgan holatda"""
+    """Phone state"""
     if message.text in ["◀️ Orqaga", "🏠 Bosh menyu"]:
         await state.finish()
         await message.answer("🏠 Bosh menyu", reply_markup=main_menu(message.from_user.id in ADMINS))
         return
-
-    await message.answer(
-        "📱 Iltimos, <b>Telefon raqamni yuborish</b> tugmasini bosing!",
-        reply_markup=phone_request_kb(),
-        parse_mode="HTML"
-    )
+    await message.answer("📱 Iltimos, tugmani bosing!", reply_markup=phone_request_kb())
 
 
 # ================ ADMIN PANEL ================
-
 @dp.message_handler(lambda m: m.text == "🔧 Admin panel" and m.from_user.id in ADMINS, state='*')
 async def admin_panel_handler(message: types.Message, state: FSMContext):
     """Admin panel"""
     await state.finish()
-
     from utils.db_api.database import get_total_prices_count
 
     models_count = len(get_models())
     prices_count = get_total_prices_count()
-
     tariffs_result = await api.get_tariffs()
     tariffs_count = len(tariffs_result.get('tariffs', [])) if tariffs_result.get('success') else 0
 
@@ -546,95 +371,79 @@ async def admin_panel_handler(message: types.Message, state: FSMContext):
 - 💳 Tariflar: {tariffs_count} ta
 - 👥 Adminlar: {len(ADMINS)} ta
 
-<b>🔧 Mavjud amallar:</b>
-1. 📊 Statistika - To'liq statistika
-2. 💳 Tariflar - Tariflarni ko'rish
-3. 📥 Excel import - Faylni yuklash
-4. 📤 Excel export - Bazani export qilish
-5. 🧹 Tozalash - Test ma'lumotlarni o'chirish
-6. 📱 Namuna - Model uchun narxlar
-
-<b>⚠️ Diqqat:</b> Import dan oldin backup oling!
+<b>🔧 Amallar:</b>
+Statistika, Tariflar, Excel import/export, Tozalash, Namuna
 """
     await message.answer(text, reply_markup=admin_kb(), parse_mode="HTML")
 
 
+# ================ MY ACCOUNT ================
 @dp.message_handler(lambda m: m.text == "👤 Mening hisobim", state='*')
 async def my_account(message: types.Message, state: FSMContext):
     """Mening hisobim"""
     await state.finish()
-
     result = get_user_balance(message.from_user.id)
 
     if not result.get('success'):
-        await message.answer("❌ Xatolik yuz berdi")
+        await message.answer("❌ Xatolik")
         return
 
     balance = result.get('balance', 0)
     free_trials = result.get('free_trials_left', 0)
     full_name = result.get('full_name', message.from_user.full_name)
-    phone_number = result.get('phone_number', 'Kiritilmagan')
-    total_pricings = result.get('total_pricings', 0)
+    phone = result.get('phone_number', 'Kiritilmagan')
+    total = result.get('total_pricings', 0)
 
     text = f"""👤 <b>Shaxsiy kabinet</b>
 
 📝 <b>Ism:</b> {full_name}
-📱 <b>Telefon:</b> {phone_number}
+📱 <b>Telefon:</b> {phone}
 🆔 <b>ID:</b> <code>{message.from_user.id}</code>
-💰 <b>Balans:</b> {balance} ta narxlash
-🎁 <b>Bepul urinishlar:</b> {free_trials} ta
-📊 <b>Jami narxlashlar:</b> {total_pricings} ta
-
+💰 <b>Balans:</b> {balance} ta
+🎁 <b>Bepul:</b> {free_trials} ta
+📊 <b>Jami:</b> {total} ta
 """
 
     if balance > 0:
-        text += f"✅ Siz {balance} marta telefon narxlashingiz mumkin."
+        text += f"\n✅ {balance} marta narxlashingiz mumkin."
     elif free_trials > 0:
-        text += f"🎁 Sizda {free_trials} ta bepul urinish mavjud!"
+        text += f"\n🎁 {free_trials} ta bepul urinish!"
     else:
-        text += (
-            "⚠️ Balans yetarli emas!\n"
-            "💳 Hisobni to'ldirish uchun <b>'💰 Hisobni to'ldirish'</b> tugmasini bosing."
-        )
+        text += "\n⚠️ Balans yetarli emas!\n💳 Hisobni to'ldiring."
 
     await message.answer(text, reply_markup=balance_menu_kb(), parse_mode="HTML")
 
 
+# ================ BACK TO MENU ================
 @dp.message_handler(lambda m: m.text in ["◀️ Orqaga", "🏠 Bosh menyu"], state="*")
 async def back_to_menu(message: types.Message, state: FSMContext):
-    """Bosh menyuga qaytish"""
+    """Bosh menyu"""
     await state.finish()
     await message.answer("🏠 Bosh menyu", reply_markup=main_menu(message.from_user.id in ADMINS))
 
 
-# ================ TO'LOV HANDLERLAR ================
-
+# ================ PAYMENT HANDLERS ================
 @dp.message_handler(lambda m: m.text == "💰 Hisobni to'ldirish", state='*')
 async def start_payment(message: types.Message, state: FSMContext):
-    """Hisobni to'ldirish"""
+    """To'ldirish"""
     result = await api.get_tariffs()
 
     if not result.get('success'):
-        await message.answer("❌ Tariflar yuklanmadi. Iltimos, keyinroq urinib ko'ring.")
+        await message.answer("❌ Tariflar yuklanmadi")
         return
 
     tariffs = result.get('tariffs', [])
-
     if not tariffs:
-        await message.answer("📋 Hozircha tariflar mavjud emas.")
+        await message.answer("📋 Tariflar mavjud emas")
         return
 
     markup = create_tariffs_inline_keyboard(tariffs)
+    text = "💰 <b>Hisobni to'ldirish</b>\n\nTarifni tanlang:\n\n"
 
-    text = "💰 <b>Hisobni to'ldirish</b>\n\n"
-    text += "Quyidagi tariflardan birini tanlang:\n\n"
-
-    for tariff in tariffs:
-        price_per_one = tariff['price'] / tariff['count']
-        emoji = '1️⃣' if tariff['count'] == 1 else '5️⃣' if tariff['count'] == 5 else '🔟'
-        text += f"{emoji} <b>{tariff['name']}</b>\n"
-        text += f"   Narx: {tariff['price']:,.0f} so'm\n"
-        text += f"   Bitta: {price_per_one:,.0f} so'm\n\n"
+    for t in tariffs:
+        ppo = t['price'] / t['count']
+        emoji = '1️⃣' if t['count'] == 1 else '5️⃣' if t['count'] == 5 else '🔟'
+        text += f"{emoji} <b>{t['name']}</b>\n   {t['price']:,.0f} so'm ({ppo:,.0f} so'm/ta)\n\n"
 
     text += "👇 Tarifni tanlang:"
 
@@ -642,7 +451,7 @@ async def start_payment(message: types.Message, state: FSMContext):
     await message.answer(text, reply_markup=markup, parse_mode="HTML")
 
 
-@dp.callback_query_handler(lambda c: c.data and c.data.startswith("tariff_"), state=PaymentState.waiting_tariff)
+@dp.callback_query_handler(lambda c: c.data.startswith("tariff_"), state=PaymentState.waiting_tariff)
 async def process_tariff(callback: types.CallbackQuery, state: FSMContext):
     """Tarif tanlandi"""
     await callback.answer()
@@ -650,48 +459,40 @@ async def process_tariff(callback: types.CallbackQuery, state: FSMContext):
     try:
         tariff_id = int(callback.data.split("_")[1])
     except:
-        await callback.answer("❌ Xato tarif", show_alert=True)
+        await callback.answer("❌ Xato", show_alert=True)
         return
 
-    result = await api.create_payment(
-        telegram_id=callback.from_user.id,
-        tariff_id=tariff_id
-    )
+    result = await api.create_payment(callback.from_user.id, tariff_id)
 
     if not result.get('success'):
-        error_msg = result.get('error', 'Xatolik yuz berdi')
-        await callback.answer(f"❌ {error_msg}", show_alert=True)
+        await callback.answer(f"❌ {result.get('error', 'Xato')}", show_alert=True)
         return
 
     order_id = result.get('order_id', '')
-
     if not order_id:
-        logger.error(f"Order ID not received for user {callback.from_user.id}")
-        await callback.answer("❌ Order ID mavjud emas", show_alert=True)
+        await callback.answer("❌ Order ID yo'q", show_alert=True)
         return
 
     await state.update_data(
         order_id=order_id,
-        payment_id=result.get('payment_id'),
         payment_url=result.get('payment_url'),
         amount=result.get('amount'),
         count=result.get('count'),
         tariff_name=result.get('tariff_name')
     )
 
-    text = f"""💳 <b>To'lov ma'lumotlari</b>
+    text = f"""💳 <b>To'lov</b>
 
-🆔 <b>Order ID:</b> <code>{order_id}</code>
-💰 <b>Summa:</b> {result.get('amount', 0):,.0f} so'm
-📦 <b>Narxlashlar:</b> {result.get('count', 0)} ta
-🏷️ <b>Tarif:</b> {result.get('tariff_name', '')}
+🆔 <code>{order_id}</code>
+💰 {result.get('amount', 0):,.0f} so'm
+📦 {result.get('count', 0)} ta
 
-<b>To'lov qilish uchun:</b>
-1️⃣ Quyidagi tugma orqali Payme ga o'ting
+<b>To'lov qilish:</b>
+1️⃣ Payme ga o'ting
 2️⃣ To'lovni amalga oshiring
-3️⃣ To'lov qilganingizdan so'ng "✅ To'lov qildim" tugmasini bosing
+3️⃣ "✅ To'lov qildim" bosing
 
-⏳ To'lov 30 daqiqa ichida amalga oshirilishi kerak!
+⏳ 30 daqiqa ichida!
 """
 
     markup = create_payment_inline_keyboard(result.get('payment_url', ''))
@@ -703,7 +504,6 @@ async def process_tariff(callback: types.CallbackQuery, state: FSMContext):
 
     await PaymentState.waiting_check.set()
     await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
-
     asyncio.create_task(auto_check_payment(order_id, callback.from_user.id, state))
 
 
@@ -716,111 +516,84 @@ async def check_payment_handler(callback: types.CallbackQuery, state: FSMContext
     order_id = data.get('order_id')
 
     if not order_id:
-        await callback.answer("❌ Order ID topilmadi.", show_alert=True)
+        await callback.answer("❌ Order ID topilmadi", show_alert=True)
         return
 
     result = await api.check_payment_status(order_id)
 
-    if not result.get('success'):
-        await callback.answer(
-            "❌ To'lov topilmadi. Iltimos, to'lovni amalga oshiring.",
-            show_alert=True
-        )
+    if not result.get('success') or not result.get('has_payment'):
+        await callback.answer("❌ To'lov topilmadi", show_alert=True)
         return
 
-    if result.get('has_payment'):
-        if result.get('state') == 2:
-            text = f"""✅ <b>TO'LOV MUVAFFAQIYATLI!</b>
+    if result.get('state') == 2:
+        text = f"""✅ <b>TO'LOV MUVAFFAQIYATLI!</b>
 
-💰 <b>Balans:</b> {result.get('balance', 0)} ta narxlash
-📦 <b>Qo'shildi:</b> {result.get('count', 0)} ta
-💵 <b>Summa:</b> {result.get('amount', 0):,.0f} so'm
+💰 {result.get('balance', 0)} ta
+📦 {result.get('count', 0)} ta
+💵 {result.get('amount', 0):,.0f} so'm
 
-🎉 Endi siz telefonlarni narxlashingiz mumkin!
+🎉 Endi narxlashingiz mumkin!
 """
-            try:
-                await callback.message.edit_text(text, parse_mode="HTML")
-            except:
-                await callback.message.answer(text, parse_mode="HTML")
+        try:
+            await callback.message.edit_text(text, parse_mode="HTML")
+        except:
+            await callback.message.answer(text, parse_mode="HTML")
+        await state.finish()
 
-            await state.finish()
-
-        elif result.get('state') == 1:
-            await callback.answer(
-                "⏳ To'lov hali amalga oshirilmadi.\nIltimos, to'lovni amalga oshiring.",
-                show_alert=True
-            )
-        else:
-            await callback.answer(
-                "❌ To'lov bekor qilindi.\nIltimos, qaytadan urinib ko'ring.",
-                show_alert=True
-            )
-            await state.finish()
+    elif result.get('state') == 1:
+        await callback.answer("⏳ To'lov hali qilinmadi", show_alert=True)
     else:
-        await callback.answer(
-            "❌ To'lov topilmadi. Iltimos, to'lovni amalga oshiring.",
-            show_alert=True
-        )
+        await callback.answer("❌ To'lov bekor qilindi", show_alert=True)
+        await state.finish()
 
 
 @dp.callback_query_handler(lambda c: c.data == "cancel_payment", state=PaymentState.waiting_check)
 async def cancel_payment_callback(callback: types.CallbackQuery, state: FSMContext):
-    """To'lovni bekor qilish"""
+    """Bekor qilish"""
     try:
         await callback.message.delete()
     except:
         pass
-    await callback.answer("❌ To'lov bekor qilindi")
+    await callback.answer("❌ Bekor qilindi")
     await state.finish()
     await callback.message.answer("🏠 Bosh menyu", reply_markup=main_menu(callback.from_user.id in ADMINS))
 
 
-# ================ NARXLASH HANDLERLAR ================
-
+# ================ PRICING HANDLERS ================
 @dp.message_handler(lambda m: m.text in ["📱 Telefon narxlash", "🔄 Yana hisoblash"], state='*')
 async def choose_model(message: types.Message, state: FSMContext):
-    """
-    ✅ Model tanlash:
-    - LOCAL: telefon raqami + free_trials tekshirish
-    - API: paid balance tekshirish (faqat free tugagan bo'lsa)
-    """
+    """Model tanlash - OPTIMIZED"""
     await state.finish()
     user_id = message.from_user.id
 
-    # 1) LOCAL tekshiruv (telefon raqami + free trial)
     local_check = check_can_price(user_id)
 
-    # user yo'q bo'lsa (localda) - odatda create_user() qilingan bo'lishi kerak
     if not local_check.get("success"):
-        await message.answer("❌ Local bazada user topilmadi. /start bosing.")
+        await message.answer("❌ User topilmadi. /start bosing")
         return
 
-    # Telefon raqami kerak bo'lsa
     if local_check.get("need_phone"):
-        await message.answer(local_check.get("message", "📱 Iltimos, telefon raqam kiriting"))
+        await message.answer(local_check.get("message", "📱 Telefon kerak"))
         return
 
     free_trials = int(local_check.get("free_trials_left", 0) or 0)
 
-    # 2) API balans (faqat free tugagan bo'lsa)
     api_balance = 0
     if free_trials <= 0:
         try:
             api_res = await api.get_balance(user_id)
             api_balance = int(api_res.get("balance", 0) or 0)
-        except Exception as e:
-            logger.error(f"❌ API balansini olishda xatolik: {e}")
+        except:
             api_balance = 0
 
-    # 3) Umumiy tekshiruv
     if free_trials <= 0 and api_balance <= 0:
         text = f"""❌ <b>Balans yetarli emas!</b>
 
-🎁 <b>Bepul urinishlar:</b> 0 ta
-💰 <b>Sotib olingan balans:</b> {api_balance} ta
+🎁 <b>Bepul:</b> 0 ta
+💰 <b>Balans:</b> {api_balance} ta
 
-💡 <b>Hisobni to'ldirish uchun quyidagi tugmani bosing:</b>
-"""
+💡 <b>Hisobni to'ldiring:</b>"""
+
         from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
         kb = ReplyKeyboardMarkup(resize_keyboard=True)
         kb.row(KeyboardButton("💰 Hisobni to'ldirish"))
@@ -828,7 +601,6 @@ async def choose_model(message: types.Message, state: FSMContext):
         await message.answer(text, reply_markup=kb, parse_mode="HTML")
         return
 
-    # 4) Modellarni chiqarish
     models = get_models()
     if not models:
         await message.answer("❌ Modellar topilmadi")
@@ -837,57 +609,69 @@ async def choose_model(message: types.Message, state: FSMContext):
     sorted_models = sort_models_naturally(models)
     kb = create_keyboard([m['name'] for m in sorted_models], row_width=2)
 
-    # 5) Status matni
-    if free_trials > 0:
-        status_text = f"🎁 <b>Bepul urinish: {free_trials} ta qoldi</b>"
-    else:
-        status_text = f"💰 <b>Balans: {api_balance} ta narxlash</b>"
+    status = f"🎁 <b>Bepul: {free_trials} ta</b>" if free_trials > 0 else f"💰 <b>Balans: {api_balance} ta</b>"
 
     text = f"""📱 <b>Telefon narxlash</b>
 
-{status_text}
+{status}
 
-<b>Modelni tanlang:</b>
-"""
+<b>Modelni tanlang:</b>"""
+
     await UserState.waiting_model.set()
     await message.answer(text, reply_markup=kb, parse_mode="HTML")
 
 
 @dp.message_handler(state=UserState.waiting_model)
 async def model_selected(message: types.Message, state: FSMContext):
-    """Model tanlandi"""
+    """Model tanlandi - OPTIMIZED"""
     if message.text in ["◀️ Orqaga", "🏠 Bosh menyu"]:
         await state.finish()
         await message.answer("🏠 Bosh menyu", reply_markup=main_menu(message.from_user.id in ADMINS))
         return
 
-    models = get_models()
-    model = next((m for m in models if m['name'] == message.text), None)
-
-    if not model:
-        await message.answer("❌ Model topilmadi. Iltimos, tugmalardan birini tanlang.")
+    models = get_models() or []
+    if not models:
+        await state.finish()
+        await message.answer("❌ Modellar topilmadi", reply_markup=main_menu(message.from_user.id in ADMINS))
         return
 
-    await state.update_data(model_id=model['id'], model_name=model['name'])
+    model_map = {m.get("name"): m for m in models if m.get("name") and m.get("id")}
+    selected = model_map.get(message.text)
 
-    storages = get_storages(model['id'])
+    if not selected:
+        sorted_models = sort_models_naturally(models)
+        kb = create_keyboard([m['name'] for m in sorted_models], row_width=2)
+        await message.answer("❌ Model topilmadi:", reply_markup=kb)
+        return
+
+    await state.update_data(model_id=selected["id"], model_name=selected["name"])
+
+    storages = get_storages(selected["id"]) or []
 
     if not storages:
-        await message.answer("❌ Xotiralar topilmadi")
+        sorted_models = sort_models_naturally(models)
+        kb = create_keyboard([m['name'] for m in sorted_models], row_width=2)
+        await message.answer("❌ Xotira topilmadi. Boshqa model:", reply_markup=kb)
+        await UserState.waiting_model.set()
         return
 
     sorted_storages = sort_storages_naturally(storages)
-    storage_sizes = [s['size'] for s in sorted_storages]
-
-    kb = create_keyboard(storage_sizes, row_width=2)
-
-    await message.answer("<b>💾 Xotira hajmini tanlang:</b>", reply_markup=kb, parse_mode="HTML")
+    kb = create_keyboard([s['size'] for s in sorted_storages], row_width=2)
+    await message.answer("<b>💾 Xotira:</b>", reply_markup=kb, parse_mode="HTML")
     await UserState.waiting_storage.set()
 
 
 @dp.message_handler(state=UserState.waiting_storage)
 async def storage_selected(message: types.Message, state: FSMContext):
-    """Xotira tanlandi"""
+    """Xotira tanlandi - OPTIMIZED"""
+    data = await state.get_data()
+
+    if 'model_id' not in data:
+        await state.finish()
+        await message.answer("❌ Jarayon buzildi. 📱 Telefon narxlash",
+                             reply_markup=main_menu(message.from_user.id in ADMINS))
+        return
+
     if message.text in ["◀️ Orqaga", "🏠 Bosh menyu"]:
         if message.text == "🏠 Bosh menyu":
             await state.finish()
@@ -895,65 +679,65 @@ async def storage_selected(message: types.Message, state: FSMContext):
         else:
             models = get_models()
             sorted_models = sort_models_naturally(models)
-            model_names = [m['name'] for m in sorted_models]
-            kb = create_keyboard(model_names, row_width=2)
-            await message.answer("<b>📱 Modelni tanlang:</b>", reply_markup=kb, parse_mode="HTML")
+            kb = create_keyboard([m['name'] for m in sorted_models], row_width=2)
+            await message.answer("<b>📱 Model:</b>", reply_markup=kb, parse_mode="HTML")
             await UserState.waiting_model.set()
         return
 
     await state.update_data(storage=message.text)
-
     data = await state.get_data()
-    colors = get_colors(data['model_id'])
+
+    colors = get_colors(data['model_id']) or []
 
     if colors:
-        color_names = [c['name'] for c in colors]
-        kb = create_keyboard(color_names, row_width=2)
-        await message.answer("<b>🎨 Rangni tanlang:</b>", reply_markup=kb, parse_mode="HTML")
+        kb = create_keyboard([c['name'] for c in colors], row_width=2)
+        await message.answer("<b>🎨 Rang:</b>", reply_markup=kb, parse_mode="HTML")
         await UserState.waiting_color.set()
     else:
         await state.update_data(color="Standart")
         batteries = get_batteries(data['model_id']) or [{"label": "100%"}]
         sorted_batteries = sort_batteries_naturally(batteries)
-        battery_labels = [b['label'] for b in sorted_batteries]
-        kb = create_keyboard(battery_labels, row_width=2)
-        await message.answer("<b>🔋 Batareya holatini tanlang:</b>", reply_markup=kb, parse_mode="HTML")
+        kb = create_keyboard([b['label'] for b in sorted_batteries], row_width=2)
+        await message.answer("<b>🔋 Batareya:</b>", reply_markup=kb, parse_mode="HTML")
         await UserState.waiting_battery.set()
 
 
 @dp.message_handler(state=UserState.waiting_color)
 async def color_selected(message: types.Message, state: FSMContext):
-    """Rang tanlandi"""
+    """Rang tanlandi - OPTIMIZED"""
+    data = await state.get_data()
+
+    if 'model_id' not in data:
+        await state.finish()
+        await message.answer("❌ Jarayon buzildi. 📱 Telefon narxlash",
+                             reply_markup=main_menu(message.from_user.id in ADMINS))
+        return
+
     if message.text in ["◀️ Orqaga", "🏠 Bosh menyu"]:
         if message.text == "🏠 Bosh menyu":
             await state.finish()
             await message.answer("🏠 Bosh menyu", reply_markup=main_menu(message.from_user.id in ADMINS))
         else:
-            data = await state.get_data()
-            storages = get_storages(data['model_id'])
+            storages = get_storages(data['model_id']) or []
             sorted_storages = sort_storages_naturally(storages)
-            storage_sizes = [s['size'] for s in sorted_storages]
-            kb = create_keyboard(storage_sizes, row_width=2)
-            await message.answer("<b>💾 Xotira hajmini tanlang:</b>", reply_markup=kb, parse_mode="HTML")
+            kb = create_keyboard([s['size'] for s in sorted_storages], row_width=2)
+            await message.answer("<b>💾 Xotira:</b>", reply_markup=kb, parse_mode="HTML")
             await UserState.waiting_storage.set()
         return
 
     await state.update_data(color=message.text)
-
     data = await state.get_data()
+
     batteries = get_batteries(data['model_id']) or [{"label": "100%"}]
     sorted_batteries = sort_batteries_naturally(batteries)
-    battery_labels = [b['label'] for b in sorted_batteries]
-
-    kb = create_keyboard(battery_labels, row_width=2)
-
-    await message.answer("<b>🔋 Batareya holatini tanlang:</b>", reply_markup=kb, parse_mode="HTML")
+    kb = create_keyboard([b['label'] for b in sorted_batteries], row_width=2)
+    await message.answer("<b>🔋 Batareya:</b>", reply_markup=kb, parse_mode="HTML")
     await UserState.waiting_battery.set()
 
 
 @dp.message_handler(state=UserState.waiting_battery)
 async def battery_selected(message: types.Message, state: FSMContext):
-    """Batareya tanlandi"""
+    """Batareya tanlandi - OPTIMIZED"""
     if message.text in ["◀️ Orqaga", "🏠 Bosh menyu"]:
         if message.text == "🏠 Bosh menyu":
             await state.finish()
@@ -962,21 +746,18 @@ async def battery_selected(message: types.Message, state: FSMContext):
             data = await state.get_data()
             colors = get_colors(data['model_id'])
             if colors:
-                color_names = [c['name'] for c in colors]
-                kb = create_keyboard(color_names, row_width=2)
-                await message.answer("<b>🎨 Rangni tanlang:</b>", reply_markup=kb, parse_mode="HTML")
+                kb = create_keyboard([c['name'] for c in colors], row_width=2)
+                await message.answer("<b>🎨 Rang:</b>", reply_markup=kb, parse_mode="HTML")
                 await UserState.waiting_color.set()
             else:
                 storages = get_storages(data['model_id'])
                 sorted_storages = sort_storages_naturally(storages)
-                storage_sizes = [s['size'] for s in sorted_storages]
-                kb = create_keyboard(storage_sizes, row_width=2)
-                await message.answer("<b>💾 Xotira hajmini tanlang:</b>", reply_markup=kb, parse_mode="HTML")
+                kb = create_keyboard([s['size'] for s in sorted_storages], row_width=2)
+                await message.answer("<b>💾 Xotira:</b>", reply_markup=kb, parse_mode="HTML")
                 await UserState.waiting_storage.set()
         return
 
     await state.update_data(battery=message.text)
-
     data = await state.get_data()
     model_name = data.get('model_name', '')
 
@@ -985,23 +766,21 @@ async def battery_selected(message: types.Message, state: FSMContext):
         kb = ReplyKeyboardMarkup(resize_keyboard=True)
         kb.row(KeyboardButton("📱 SIM karta"), KeyboardButton("📲 eSIM"))
         kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
-
-        await message.answer("<b>📞 SIM turini tanlang:</b>", reply_markup=kb, parse_mode="HTML")
+        await message.answer("<b>📞 SIM:</b>", reply_markup=kb, parse_mode="HTML")
         await UserState.waiting_sim.set()
     else:
         from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
         kb = ReplyKeyboardMarkup(resize_keyboard=True)
         kb.row(KeyboardButton("✅ Bor"), KeyboardButton("❌ Yo'q"))
         kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
-
-        await message.answer("<b>📦 Quti bor/yo'q:</b>", reply_markup=kb, parse_mode="HTML")
+        await message.answer("<b>📦 Quti:</b>", reply_markup=kb, parse_mode="HTML")
         await UserState.waiting_box.set()
         await state.update_data(sim_type="physical")
 
 
 @dp.message_handler(state=UserState.waiting_sim)
 async def sim_selected(message: types.Message, state: FSMContext):
-    """SIM tanlandi"""
+    """SIM tanlandi - OPTIMIZED"""
     if message.text in ["◀️ Orqaga", "🏠 Bosh menyu"]:
         if message.text == "🏠 Bosh menyu":
             await state.finish()
@@ -1010,9 +789,8 @@ async def sim_selected(message: types.Message, state: FSMContext):
             data = await state.get_data()
             batteries = get_batteries(data['model_id']) or [{"label": "100%"}]
             sorted_batteries = sort_batteries_naturally(batteries)
-            battery_labels = [b['label'] for b in sorted_batteries]
-            kb = create_keyboard(battery_labels, row_width=2)
-            await message.answer("<b>🔋 Batareya holatini tanlang:</b>", reply_markup=kb, parse_mode="HTML")
+            kb = create_keyboard([b['label'] for b in sorted_batteries], row_width=2)
+            await message.answer("<b>🔋 Batareya:</b>", reply_markup=kb, parse_mode="HTML")
             await UserState.waiting_battery.set()
         return
 
@@ -1023,41 +801,56 @@ async def sim_selected(message: types.Message, state: FSMContext):
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.row(KeyboardButton("✅ Bor"), KeyboardButton("❌ Yo'q"))
     kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
-
-    await message.answer("<b>📦 Quti bor/yo'q:</b>", reply_markup=kb, parse_mode="HTML")
+    await message.answer("<b>📦 Quti:</b>", reply_markup=kb, parse_mode="HTML")
     await UserState.waiting_box.set()
 
 
 @dp.message_handler(state=UserState.waiting_box)
 async def box_selected(message: types.Message, state: FSMContext):
-    """Quti tanlandi"""
+    """Quti tanlandi - ALMASHGAN QISMLAR BILAN"""
     if message.text in ["◀️ Orqaga", "🏠 Bosh menyu"]:
         if message.text == "🏠 Bosh menyu":
             await state.finish()
             await message.answer("🏠 Bosh menyu", reply_markup=main_menu(message.from_user.id in ADMINS))
-        else:
-            data = await state.get_data()
-            model_name = data.get('model_name', '')
+            return
 
-            if should_ask_sim_type(model_name):
-                from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-                kb = ReplyKeyboardMarkup(resize_keyboard=True)
-                kb.row(KeyboardButton("📱 SIM karta"), KeyboardButton("📲 eSIM"))
-                kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
-                await message.answer("<b>📞 SIM turini tanlang:</b>", reply_markup=kb, parse_mode="HTML")
-                await UserState.waiting_sim.set()
-            else:
-                batteries = get_batteries(data['model_id']) or [{"label": "100%"}]
-                sorted_batteries = sort_batteries_naturally(batteries)
-                battery_labels = [b['label'] for b in sorted_batteries]
-                kb = create_keyboard(battery_labels, row_width=2)
-                await message.answer("<b>🔋 Batareya holatini tanlang:</b>", reply_markup=kb, parse_mode="HTML")
-                await UserState.waiting_battery.set()
+        data = await state.get_data()
+        model_name = data.get('model_name', '')
+
+        if should_ask_sim_type(model_name):
+            from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+            kb = ReplyKeyboardMarkup(resize_keyboard=True)
+            kb.row(KeyboardButton("📱 SIM karta"), KeyboardButton("📲 eSIM"))
+            kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
+            await message.answer("<b>📞 SIM:</b>", reply_markup=kb, parse_mode="HTML")
+            await UserState.waiting_sim.set()
+            return
+
+        if 'model_id' not in data:
+            await state.finish()
+            await message.answer("❌ Jarayon buzildi. 📱 Telefon narxlash",
+                                 reply_markup=main_menu(message.from_user.id in ADMINS))
+            return
+
+        batteries = get_batteries(data['model_id']) or [{"label": "100%"}]
+        sorted_batteries = sort_batteries_naturally(batteries)
+        kb = create_keyboard([b['label'] for b in sorted_batteries], row_width=2)
+        await message.answer("<b>🔋 Batareya:</b>", reply_markup=kb, parse_mode="HTML")
+        await UserState.waiting_battery.set()
         return
 
-    has_box = "Bor" if "Bor" in message.text else "Yo'q"
+    if message.text not in ["✅ Bor", "❌ Yo'q"]:
+        from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+        kb = ReplyKeyboardMarkup(resize_keyboard=True)
+        kb.row(KeyboardButton("✅ Bor"), KeyboardButton("❌ Yo'q"))
+        kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
+        await message.answer("❌ Tugmalardan tanlang:", reply_markup=kb)
+        return
+
+    has_box = "Bor" if message.text == "✅ Bor" else "Yo'q"
     await state.update_data(has_box=has_box)
 
+    # ⚡ QISMLAR SO'ROVI
     await message.answer(
         "<b>🔧 Telefonning qismlari almashganmi?</b>",
         reply_markup=parts_choice_kb(),
@@ -1066,9 +859,10 @@ async def box_selected(message: types.Message, state: FSMContext):
     await UserState.waiting_parts_choice.set()
 
 
+# ================ QISMLAR TANLOVI ================
 @dp.message_handler(state=UserState.waiting_parts_choice)
 async def parts_choice_selected(message: types.Message, state: FSMContext):
-    """Qismlar tanlovi"""
+    """Qismlar tanlovi - OPTIMIZED"""
     if message.text in ["◀️ Orqaga", "🏠 Bosh menyu"]:
         if message.text == "🏠 Bosh menyu":
             await state.finish()
@@ -1078,18 +872,19 @@ async def parts_choice_selected(message: types.Message, state: FSMContext):
             kb = ReplyKeyboardMarkup(resize_keyboard=True)
             kb.row(KeyboardButton("✅ Bor"), KeyboardButton("❌ Yo'q"))
             kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
-            await message.answer("<b>📦 Quti bor/yo'q:</b>", reply_markup=kb, parse_mode="HTML")
+            await message.answer("<b>📦 Quti:</b>", reply_markup=kb, parse_mode="HTML")
             await UserState.waiting_box.set()
         return
 
+    # Yo'q bo'lsa - to'g'ridan to'g'ri yakuniy narx
     if message.text == "❌ Yo'q":
         await state.update_data(selected_parts=[], damage_display="Yangi")
         await show_final_price(message, state)
         return
 
+    # Ha bo'lsa - inline qismlar
     if message.text == "✅ Ha":
         await state.update_data(selected_parts=[])
-
         markup = create_parts_inline_kb([], PARTS)
 
         from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
@@ -1097,234 +892,168 @@ async def parts_choice_selected(message: types.Message, state: FSMContext):
         kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
 
         await message.answer(
-            "<b>🔧 Almashgan qismlarni tanlang (maks 3 ta):</b>",
+            "<b>🔧 Almashgan qismlar (maks 3 ta):</b>",
             reply_markup=kb,
             parse_mode="HTML"
         )
-
-        await message.answer("⬇️ Quyidagi qismlardan tanlang:", reply_markup=markup)
-
+        await message.answer("⬇️ Qismlardan tanlang:", reply_markup=markup)
         await UserState.waiting_parts.set()
         return
 
-    await message.answer("❌ Iltimos, tugmalardan birini tanlang:", reply_markup=parts_choice_kb())
+    await message.answer("❌ Tugmalardan birini tanlang:", reply_markup=parts_choice_kb())
 
 
-# ================ QISMLAR TANLASH HANDLERI ================
-
+# ================ QISMLAR - INLINE ================
 @dp.callback_query_handler(state=UserState.waiting_parts)
 async def parts_callback(call: types.CallbackQuery, state: FSMContext):
-    """
-    Inline callback - Qismlar tanlash
-    ✅ TO'LIQ TUZATILGAN VERSIYA
-    """
+    """Qismlar - OPTIMIZED"""
     data = await state.get_data()
     selected = data.get('selected_parts', [])
 
-    # ============= TUGMA BOSILDI =============
+    # Tugallash
     if call.data == "part_done":
         if not selected:
             await call.answer("❌ Hech narsa tanlanmadi!", show_alert=True)
             return
 
-        # Tanlangan qismlarni saqlash
         damage_display = " + ".join([PARTS[k] for k in sorted(selected)])
         await state.update_data(damage_display=damage_display)
 
-        # Inline xabarni o'chirish
         try:
             await call.message.delete()
-        except Exception as e:
-            logger.warning(f"Cannot delete inline message: {e}")
+        except:
+            pass
 
-        # ✅ TO'G'RI: Callback uchun maxsus funksiya
         await show_final_price_from_callback(call, state)
         await call.answer()
         return
 
-    # ============= QISM TANLANDI/BEKOR QILINDI =============
+    # Qism tanlash
     part_key = call.data.replace("part_", "")
 
-    # Ekran va Oyna birga bo'lishi mumkin emas
+    # Ekran va Oyna birga emas
     if part_key in ("screen", "glass"):
         other = "glass" if part_key == "screen" else "screen"
         if other in selected:
-            await call.answer("❌ Ekran va Oyna birga bo'lishi mumkin emas!", show_alert=True)
+            await call.answer("❌ Ekran va Oyna birga bo'lmaydi!", show_alert=True)
             return
 
-    # Qo'shish yoki olib tashlash
+    # Qo'shish/olib tashlash
     if part_key in selected:
         selected.remove(part_key)
     else:
         if len(selected) >= 3:
-            await call.answer("❌ Maksimum 3 ta qism tanlash mumkin!", show_alert=True)
+            await call.answer("❌ Maks 3 ta!", show_alert=True)
             return
         selected.append(part_key)
 
-    # State ga saqlash
     await state.update_data(selected_parts=selected)
-
-    # Inline keyboard ni yangilash
     markup = create_parts_inline_kb(selected, PARTS)
 
-    # Tanlangan qismlarni ko'rsatish
-    selected_names = [PARTS[k] for k in sorted(selected)]
-    if selected_names:
-        text = f"<b>🔧 Tanlangan:</b> {', '.join(selected_names)}"
-    else:
-        text = "<b>🔧 Almashgan qismlarni tanlang (maks 3 ta):</b>"
+    text = f"<b>🔧 Tanlangan:</b> {', '.join([PARTS[k] for k in sorted(selected)])}" if selected else "<b>🔧 Qismlar (maks 3):</b>"
 
-    # Xabarni yangilash
     try:
         await call.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
     except MessageNotModified:
-        pass  # Agar o'zgarish bo'lmasa
-    except Exception as e:
-        logger.warning(f"Cannot edit inline message: {e}")
+        pass
 
     await call.answer()
 
 
-# ================ YAKUNIY NARX - CALLBACK DAN ================
-
+# ================ FINAL PRICE - CALLBACK ================
 async def show_final_price_from_callback(call: types.CallbackQuery, state: FSMContext):
-    """
-    ✅ Yakuniy narx - CALLBACK
-    - free_trial bo'lsa LOCAL dan yechadi
-    - free tugasa API paid balansdan yechadi
-    """
-    from utils.db_api.user_database import check_can_price, use_pricing as use_pricing_local
-
+    """Yakuniy narx - CALLBACK - OPTIMIZED"""
     data = await state.get_data()
     selected = data.get('selected_parts', [])
-    color = data.get('color') or ""
+    color = data.get('color', '')
 
     if 'sim_type' not in data:
         data['sim_type'] = 'physical'
 
-    # Damage display
-    if not selected:
-        damage_display = "Yangi"
-    else:
-        damage_display = data.get('damage_display', " + ".join([PARTS[k] for k in sorted(selected)]))
+    damage_display = "Yangi" if not selected else data.get('damage_display',
+                                                           " + ".join([PARTS[k] for k in sorted(selected)]))
 
-    # Narxni hisoblash
-    try:
-        final_price = calculate_final_price(data)
-    except Exception as e:
-        logger.error(f"Price calculation error: {e}", exc_info=True)
-        final_price = "Hisoblash jarayonida..."
-
+    final_price = calculate_final_price(data)
     phone_model = f"{data['model_name']} {data['storage']}"
 
-    # Narxni raqamga aylantirish
-    price_value = 0
+    # Price value
     if isinstance(final_price, str):
         price_str = final_price.replace(" $", "").replace("$", "").replace(" ", "").replace(",", "")
         try:
             price_value = int(float(price_str))
         except:
             price_value = 0
-    elif isinstance(final_price, (int, float)):
+    else:
         price_value = int(final_price)
 
     user_id = call.from_user.id
 
-    # ✅ 1) LOCAL free trial tekshiruv
+    # Local check
     local_check = check_can_price(user_id)
-    free_trials_left = int(local_check.get("free_trials_left", 0) or 0)
+    free_trials = int(local_check.get("free_trials_left", 0) or 0)
 
-    # DEFAULT qiymatlar
     is_free = False
     balance = 0
 
-    # ✅ 2) Agar free trial bo'lsa -> LOCAL yechamiz
-    if free_trials_left > 0:
+    # Free trial
+    if free_trials > 0:
         local_res = use_pricing_local(
-            telegram_id=user_id,
-            phone_model=phone_model,
-            storage=data.get('storage', ''),
-            color=color,
-            battery=data.get('battery', '100%'),
-            sim_type=data.get('sim_type', 'physical'),
-            has_box=data.get('has_box', "Yo'q"),
-            damage=damage_display,
-            price=price_value
+            user_id, phone_model, data.get('storage', ''), color,
+            data.get('battery', '100%'), data.get('sim_type', 'physical'),
+            data.get('has_box', "Yo'q"), damage_display, price_value
         )
 
         if not local_res.get("success"):
-            await call.message.answer(
-                f"❌ {local_res.get('error', 'Xatolik')}",
-                reply_markup=main_menu(user_id in ADMINS)
-            )
+            await call.message.answer(f"❌ {local_res.get('error')}", reply_markup=main_menu(user_id in ADMINS))
             await state.finish()
             return
 
         is_free = True
-        free_trials_left = int(local_res.get("free_trials_left", 0) or 0)
+        free_trials = int(local_res.get("free_trials_left", 0) or 0)
 
-        # API balansni ko'rsatish uchun (ixtiyoriy)
         try:
             api_res = await api.get_balance(user_id)
             balance = int(api_res.get("balance", 0) or 0)
-        except Exception as e:
-            logger.error(f"API balance get error: {e}")
+        except:
             balance = 0
 
-    # ✅ 3) Free tugagan -> API paid balansdan yechamiz
+    # Paid
     else:
         try:
-            api_res = await api.use_pricing(
-                telegram_id=user_id,
-                phone_model=phone_model,
-                price=price_value
-            )
+            api_res = await api.use_pricing(user_id, phone_model, price_value)
         except Exception as e:
-            logger.error(f"API use_pricing error: {e}", exc_info=True)
-            await call.message.answer(
-                "❌ Server bilan bog'lanishda xatolik (API). Keyinroq urinib ko'ring.",
-                reply_markup=main_menu(user_id in ADMINS)
-            )
+            await call.message.answer("❌ API xato", reply_markup=main_menu(user_id in ADMINS))
             await state.finish()
             return
 
         if not api_res.get("success"):
-            await call.message.answer(
-                f"❌ {api_res.get('error', 'Balans yetarli emas')}",
-                reply_markup=main_menu(user_id in ADMINS)
-            )
+            await call.message.answer(f"❌ {api_res.get('error')}", reply_markup=main_menu(user_id in ADMINS))
             await state.finish()
             return
 
         is_free = False
         balance = int(api_res.get("balance", 0) or 0)
-        free_trials_left = 0
 
     now = uz_now()
+    display_price = final_price if isinstance(final_price, str) else f"${price_value:,.0f}".replace(",", " ")
 
-    # Narxni formatlash
-    if isinstance(final_price, str):
-        display_price = final_price.replace("so`m", "$")
-    else:
-        display_price = f"${price_value:,.0f}".replace(",", " ")
-
-    text = f"""📊 <b>HISOBLASH NATIJASI</b>
+    text = f"""📊 <b>NATIJA</b>
 
 📱 <b>Model:</b> {data['model_name']}
 💾 <b>Xotira:</b> {data['storage']}
 🎨 <b>Rang:</b> {color or 'Standart'}
-📞 <b>SIM:</b> {'📲 eSIM' if data.get('sim_type') == 'esim' else '📱 SIM karta'}
+📞 <b>SIM:</b> {'📲 eSIM' if data.get('sim_type') == 'esim' else '📱 SIM'}
 🔋 <b>Batareya:</b> {data['battery']}
 📦 <b>Quti:</b> {'✅ Bor' if data['has_box'] == 'Bor' else '❌ Yo`q'}
 🔧 <b>Holat:</b> {damage_display}
 
 💰 <b>Narx:</b> <code>{display_price}</code>
 
-{'🎁 <b>Bepul urinishdan foydalanildi!</b>' if is_free else '💰 <b>Pullik balansdan foydalanildi!</b>'}
-💳 <b>Yangi balans:</b> {balance} ta narxlash
-🎁 <b>Bepul urinishlar qoldi:</b> {free_trials_left} ta
+{'🎁 <b>Bepul ishlatildi!</b>' if is_free else '💰 <b>Pullik ishlatildi!</b>'}
+💳 <b>Balans:</b> {balance} ta
+🎁 <b>Bepul qoldi:</b> {free_trials} ta
 
-🕒 <b>Sana:</b> {now}
+🕒 {now}
 """
 
     from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
@@ -1335,159 +1064,114 @@ async def show_final_price_from_callback(call: types.CallbackQuery, state: FSMCo
     await state.finish()
 
 
-# ================ YAKUNIY NARX - ODDIY MESSAGE DAN ================
-
+# ================ FINAL PRICE - MESSAGE ================
 async def show_final_price(message: types.Message, state: FSMContext):
-    """
-    ✅ Yakuniy narx - MESSAGE
-    - free_trial bo'lsa LOCAL dan yechadi
-    - free tugasa API paid balansdan yechadi
-    - Holat Ideal/Yangi bo'lmasa ogohlantirish chiqaradi
-    """
-    from utils.db_api.user_database import check_can_price, use_pricing as use_pricing_local
-
+    """Yakuniy narx - MESSAGE - OPTIMIZED"""
     data = await state.get_data()
-    selected = data.get('selected_parts', [])
-    color = data.get('color') or ""
 
-    if 'sim_type' not in data:
-        data['sim_type'] = 'physical'
+    model_name = data.get("model_name")
+    storage = data.get("storage")
 
-    # ✅ Damage display (Holat)
-    if not selected:
-        damage_display = "Yangi"
-    else:
-        damage_display = data.get('damage_display', " + ".join([PARTS[k] for k in sorted(selected)]))
+    if not model_name or not storage:
+        await state.finish()
+        await message.answer("❌ Jarayon buzildi. 📱 Telefon narxlash",
+                             reply_markup=main_menu(message.from_user.id in ADMINS))
+        return
 
-    # ✅ Narxni hisoblash
-    try:
-        final_price = calculate_final_price(data)
-    except Exception as e:
-        logger.error(f"Price calculation error: {e}", exc_info=True)
-        final_price = "Hisoblash jarayonida..."
+    color = data.get("color") or "Standart"
+    battery = data.get("battery") or "100%"
+    sim_type = data.get("sim_type") or "physical"
+    has_box = data.get("has_box") or "Yo'q"
+    selected = data.get("selected_parts", []) or []
+    damage_display = data.get("damage_display") or (
+        "Yangi" if not selected else " + ".join([PARTS[k] for k in sorted(selected)]))
 
-    phone_model = f"{data['model_name']} {data['storage']}"
+    safe_data = dict(data)
+    safe_data.update({
+        "color": color,
+        "battery": battery,
+        "sim_type": sim_type,
+        "has_box": has_box,
+        "selected_parts": selected,
+        "damage_display": damage_display
+    })
 
-    # ✅ Narxni raqamga aylantirish
-    price_value = 0
+    final_price = calculate_final_price(safe_data)
+    phone_model = f"{model_name} {storage}"
+
     if isinstance(final_price, str):
-        price_str = (
-            final_price.replace(" $", "")
-            .replace("$", "")
-            .replace(" ", "")
-            .replace(",", "")
-        )
+        price_str = final_price.replace(" $", "").replace("$", "").replace(" ", "").replace(",", "")
         try:
             price_value = int(float(price_str))
         except:
             price_value = 0
-    elif isinstance(final_price, (int, float)):
+    else:
         price_value = int(final_price)
 
     user_id = message.from_user.id
 
     local_check = check_can_price(user_id)
-    free_trials_left = int(local_check.get("free_trials_left", 0) or 0)
+    free_trials = int(local_check.get("free_trials_left", 0) or 0)
 
     is_free = False
     balance = 0
 
-    # ✅ 1) Free trial bo'lsa -> LOCAL dan yechamiz
-    if free_trials_left > 0:
+    if free_trials > 0:
         local_res = use_pricing_local(
-            telegram_id=user_id,
-            phone_model=phone_model,
-            storage=data.get('storage', ''),
-            color=color,
-            battery=data.get('battery', '100%'),
-            sim_type=data.get('sim_type', 'physical'),
-            has_box=data.get('has_box', "Yo'q"),
-            damage=damage_display,
-            price=price_value
+            user_id, phone_model, storage, color, battery,
+            sim_type, has_box, damage_display, price_value
         )
 
         if not local_res.get("success"):
-            await message.answer(
-                f"❌ {local_res.get('error', 'Xatolik')}",
-                reply_markup=main_menu(user_id in ADMINS)
-            )
+            await message.answer(f"❌ {local_res.get('error')}", reply_markup=main_menu(user_id in ADMINS))
             await state.finish()
             return
 
         is_free = True
-        free_trials_left = int(local_res.get("free_trials_left", 0) or 0)
+        free_trials = int(local_res.get("free_trials_left", 0) or 0)
 
-        # API balansni ko'rsatish uchun (ixtiyoriy)
         try:
             api_res = await api.get_balance(user_id)
             balance = int(api_res.get("balance", 0) or 0)
-        except Exception as e:
-            logger.error(f"API balance get error: {e}")
+        except:
             balance = 0
 
-    # ✅ 2) Free tugasa -> API paid balansdan yechamiz
     else:
         try:
-            api_res = await api.use_pricing(
-                telegram_id=user_id,
-                phone_model=phone_model,
-                price=price_value
-            )
+            api_res = await api.use_pricing(user_id, phone_model, price_value)
         except Exception as e:
-            logger.error(f"API use_pricing error: {e}", exc_info=True)
-            await message.answer(
-                "❌ Server bilan bog'lanishda xatolik (API). Keyinroq urinib ko'ring.",
-                reply_markup=main_menu(user_id in ADMINS)
-            )
+            await message.answer("❌ API xato", reply_markup=main_menu(user_id in ADMINS))
             await state.finish()
             return
 
         if not api_res.get("success"):
-            await message.answer(
-                f"❌ {api_res.get('error', 'Balans yetarli emas')}",
-                reply_markup=main_menu(user_id in ADMINS)
-            )
+            await message.answer(f"❌ {api_res.get('error')}", reply_markup=main_menu(user_id in ADMINS))
             await state.finish()
             return
 
         is_free = False
         balance = int(api_res.get("balance", 0) or 0)
-        free_trials_left = 0
 
     now = uz_now()
+    display_price = final_price if isinstance(final_price, str) else f"${price_value:,.0f}".replace(",", " ")
 
-    # ✅ Narxni formatlash
-    if isinstance(final_price, str):
-        display_price = final_price
-    else:
-        display_price = f"${price_value:,.0f}".replace(",", " ")
+    text = f"""📊 <b>NATIJA</b>
 
-    # ✅ Ogohlantirish: faqat Ideal/Yangi bo'lmasa
-    warning_text = ""
-    holat = (damage_display or "").strip().lower()
-    if holat not in ("yangi", "ideal"):
-        warning_text = (
-            "\n\n⚠️ <b>Ogohlantirish:</b>\n"
-            "Vaqtincha <b>almashgan qismlari bor</b> telefonlarni <b>olmayapmiz</b>."
-        )
-
-    text = f"""📊 <b>HISOBLASH NATIJASI</b>
-
-📱 <b>Model:</b> {data['model_name']}
-💾 <b>Xotira:</b> {data['storage']}
-🎨 <b>Rang:</b> {color or 'Standart'}
-📞 <b>SIM:</b> {'📲 eSIM' if data.get('sim_type') == 'esim' else '📱 SIM karta'}
-🔋 <b>Batareya:</b> {data['battery']}
-📦 <b>Quti:</b> {'✅ Bor' if data.get('has_box') == 'Bor' else '❌ Yo`q'}
+📱 <b>Model:</b> {model_name}
+💾 <b>Xotira:</b> {storage}
+🎨 <b>Rang:</b> {color}
+📞 <b>SIM:</b> {'📲 eSIM' if sim_type == 'esim' else '📱 SIM'}
+🔋 <b>Batareya:</b> {battery}
+📦 <b>Quti:</b> {'✅ Bor' if has_box == 'Bor' else '❌ Yo`q'}
 🔧 <b>Holat:</b> {damage_display}
 
 💰 <b>Narx:</b> <code>{display_price}</code>
 
-{'🎁 <b>Bepul urinishdan foydalanildi!</b>' if is_free else '💰 <b>Pullik balansdan foydalanildi!</b>'}
-💳 <b>Yangi balans:</b> {balance} ta narxlash
-🎁 <b>Bepul urinishlar qoldi:</b> {free_trials_left} ta
+{'🎁 <b>Bepul ishlatildi!</b>' if is_free else '💰 <b>Pullik ishlatildi!</b>'}
+💳 <b>Balans:</b> {balance} ta
+🎁 <b>Bepul qoldi:</b> {free_trials} ta
 
-🕒 <b>Sana:</b> {now}{warning_text}
+🕒 {now}
 """
 
     from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
@@ -1498,36 +1182,9 @@ async def show_final_price(message: types.Message, state: FSMContext):
     await state.finish()
 
 
-
-# ================ BIZ HAQIMIZDA ================
-
+# ================ ABOUT ================
 @dp.message_handler(lambda m: m.text == "ℹ️ Biz haqimizda", state='*')
 async def about_handler(message: types.Message, state: FSMContext):
-    """Biz haqimizda - Typing effect bilan"""
+    """Biz haqimizda"""
     await state.finish()
-
-    await typewriter_two_speed_plain_then_html(
-        message,
-        ABOUT_TEXT,
-        fast_delay=0.01,
-        slow_delay=0.05,
-        fast_chunk=18,
-        slow_chunk=10,
-    )
-
-
-@dp.message_handler(lambda m: m.text == "🔄 Yana hisoblash", state='*')
-async def again(message: types.Message, state: FSMContext):
-    """Yana hisoblash"""
-    await choose_model(message, state)
-
-
-# ================ NOMA'LUM XABARLAR ================
-
-# @dp.message_handler(state='*')
-# async def unknown_message(message: types.Message):
-#     """Noma'lum xabarlarga javob"""
-#     await message.answer(
-#         "🤖 Iltimos, menyudan birini tanlang yoki /start ni bosing.",
-#         reply_markup=main_menu(message.from_user.id in ADMINS)
-#     )
+    await message.answer(ABOUT_TEXT, parse_mode="HTML")

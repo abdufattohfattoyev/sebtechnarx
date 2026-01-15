@@ -92,15 +92,33 @@ def payment_check_inline_kb(payment_url):
 
 # ================ NARXLASH KLAVIATURALARI ================
 
-def create_keyboard(items, row_width=2):
-    """Dinamik klaviatura yaratish"""
+def create_keyboard(items, row_width=2, back=True, main_menu=True):
+    """
+    Dinamik klaviatura yaratish
+
+    Args:
+        items: tugmalar ro'yxati
+        row_width: har bir qatordagi tugmalar soni
+        back: "Orqaga" tugmasini qo'shish
+        main_menu: "Bosh menyu" tugmasini qo'shish
+    """
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
 
+    # Asosiy tugmalar
     for i in range(0, len(items), row_width):
         row_items = items[i:i + row_width]
         kb.row(*[KeyboardButton(item) for item in row_items])
 
-    kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
+    # Qo'shimcha tugmalar
+    extra_buttons = []
+    if back:
+        extra_buttons.append(KeyboardButton("◀️ Orqaga"))
+    if main_menu:
+        extra_buttons.append(KeyboardButton("🏠 Bosh menyu"))
+
+    if extra_buttons:
+        kb.row(*extra_buttons)
+
     return kb
 
 

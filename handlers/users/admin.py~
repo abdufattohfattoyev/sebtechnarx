@@ -263,33 +263,16 @@ async def process_import(message: types.Message, state: FSMContext):
 
     try:
         # ============================================
-        # 2. FAYLNI YUKLAB OLISH (TIMEOUT BILAN)
+        # 2. FAYLNI YUKLAB OLISH
         # ============================================
-        try:
-            # 5 daqiqalik timeout
-            await asyncio.wait_for(
-                message.document.download(destination_file=file_path),
-                timeout=300.0  # 5 minut
-            )
-        except asyncio.TimeoutError:
-            await message.answer("❌ Fayl yuklanish vaqti tugadi (5 min). Kichikroq fayl yuboring!")
-            return
-        except Exception as e:
-            await message.answer(f"❌ Fayl yuklanishda xato: {e}")
-            return
-
+        await message.document.download(destination_file=file_path)
         await safe_edit_message(progress_msg, "📊 O'qilmoqda...")
 
         # ============================================
-        # 3. EXCEL NI O'QISH (OPTIMIZED)
+        # 3. EXCEL NI O'QISH
         # ============================================
-        try:
-            # Faqat kerakli ustunlarni o'qish (tezroq)
-            df = pd.read_excel(file_path, dtype=str, engine='openpyxl')
-            df.columns = [str(c).strip() for c in df.columns]
-        except Exception as e:
-            await message.answer(f"❌ Excel o'qishda xato: {e}")
-            return
+        df = pd.read_excel(file_path, dtype=str)
+        df.columns = [str(c).strip() for c in df.columns]
 
         total_rows = len(df)
 
