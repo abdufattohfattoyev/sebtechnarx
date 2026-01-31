@@ -799,7 +799,7 @@ def get_detailed_users_statistics():
                 u.phone_number,
                 u.balance,
                 u.free_trials_left,
-                u.total_pricings,
+                u.total_pricings as pricing_count,
                 u.created_at
             FROM users u
             WHERE u.is_active = TRUE

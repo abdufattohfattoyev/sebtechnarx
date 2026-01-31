@@ -1,4 +1,4 @@
-# reklama.py
+# handlers/reklama.py - IDEAL VERSIYA (10,000+ USER UCHUN)
 import datetime
 import asyncio
 from data.config import ADMINS
@@ -6,13 +6,23 @@ from loader import bot, dp
 from aiogram import types
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.utils.exceptions import BotBlocked, ChatNotFound, RetryAfter, Unauthorized, MessageNotModified
+from aiogram.utils.exceptions import (
+    BotBlocked, ChatNotFound, RetryAfter,
+    Unauthorized, MessageNotModified, TelegramAPIError
+)
 from aiogram.dispatcher.filters import Command
 
-# Stats database import
+# Database import
 from utils.db_api.user_database import get_all_users
 
-# Reklama yuborish jarayonlarini saqlash uchun ro'yxat
+# ============ KONFIGURATSIYA ============
+BATCH_SIZE = 50  # Bir vaqtning o'zida 50 ta user
+PROGRESS_UPDATE_INTERVAL = 50  # Har 50 tadan keyin progress yangilash
+MAX_CONCURRENT_SENDS = 30  # Maksimal parallel yuborish
+SEND_DELAY = 0.03  # Har bir yuborishdan keyin kutish (30ms)
+RETRY_ATTEMPTS = 2  # Qayta urinish soni
+
+# Advertisements ro'yxati
 advertisements = []
 
 
@@ -25,6 +35,8 @@ class ReklamaTuriState(StatesGroup):
 
 
 class Advertisement:
+    """Optimizatsiya qilingan Advertisement class"""
+
     def __init__(self, ad_id, message, ad_type, keyboard=None, send_time=None, creator_id=None):
         self.ad_id = ad_id
         self.message = message
@@ -36,191 +48,189 @@ class Advertisement:
         self.paused = False
         self.sent_count = 0
         self.failed_count = 0
+        self.blocked_count = 0
         self.total_users = 0
         self.current_message = None
         self.task = None
+        self._semaphore = asyncio.Semaphore(MAX_CONCURRENT_SENDS)
 
     async def start(self):
+        """Reklamani yuborishni boshlash"""
         self.running = True
 
-        # Agar kechiktirilgan yuborish bo'lsa
-        if self.send_time:
-            delay = (self.send_time - datetime.datetime.now()).total_seconds()
-            if delay > 0:
+        try:
+            # Kechiktirilgan yuborish
+            if self.send_time:
+                delay = (self.send_time - datetime.datetime.now()).total_seconds()
+                if delay > 0:
+                    await bot.send_message(
+                        chat_id=self.creator_id,
+                        text=f"⏰ Reklama #{self.ad_id} {self.send_time.strftime('%d.%m.%Y %H:%M')} da yuboriladi."
+                    )
+                    await asyncio.sleep(delay)
+
+            # Userlarni olish
+            users = await self._get_users()
+
+            if not users:
                 await bot.send_message(
                     chat_id=self.creator_id,
-                    text=f"⏰ Reklama #{self.ad_id} {self.send_time.strftime('%H:%M')} da yuboriladi."
+                    text="❌ Bazada aktiv foydalanuvchilar yo'q!"
                 )
-                await asyncio.sleep(delay)
+                return
 
-        # Foydalanuvchilarni olish
-        try:
-            users = get_all_users()
             self.total_users = len(users)
+
+            # Status xabarini yuborish
+            self.current_message = await bot.send_message(
+                chat_id=self.creator_id,
+                text=self._get_status_text(),
+                reply_markup=get_status_keyboard(self.ad_id)
+            )
+
+            # Batch qilib yuborish
+            await self._send_to_all_users(users)
+
+            # Yakuniy status
+            self.running = False
+            self.paused = False
+            await self.update_status_message(finished=True)
+
         except Exception as e:
             await bot.send_message(
                 chat_id=self.creator_id,
-                text=f"❌ Foydalanuvchilarni olishda xatolik: {str(e)}"
+                text=f"❌ Reklama yuborishda xatolik: {str(e)}"
             )
-            return
+            self.running = False
+            self.paused = False
 
-        if self.total_users == 0:
-            await bot.send_message(
-                chat_id=self.creator_id,
-                text="❌ Bazada foydalanuvchilar yo'q!"
-            )
-            return
+    async def _get_users(self):
+        """Userlarni olish - asinxron"""
+        try:
+            loop = asyncio.get_event_loop()
+            users = await loop.run_in_executor(None, get_all_users)
+            return users
+        except Exception as e:
+            print(f"❌ Userlarni olishda xato: {e}")
+            return []
 
-        # Status xabarini yuborish
-        self.current_message = await bot.send_message(
-            chat_id=self.creator_id,
-            text=f"📤 Reklama #{self.ad_id} yuborish boshlandi\n\n"
-                 f"✅ Yuborilgan: {self.sent_count}\n"
-                 f"❌ Yuborilmagan: {self.failed_count}\n"
-                 f"📊 Jami: {self.sent_count + self.failed_count}/{self.total_users}\n\n"
-                 f"⏳ Status: Davom etmoqda...",
-            reply_markup=get_status_keyboard(self.ad_id)
-        )
+    async def _send_to_all_users(self, users):
+        """Barcha userlarga yuborish - optimizatsiya qilingan"""
+        tasks = []
 
-        # Har bir foydalanuvchiga yuborish
-        for user in users:
+        for i, user in enumerate(users):
             if not self.running:
                 break
 
             # Pauza holatini tekshirish
-            while self.paused:
-                await asyncio.sleep(1)
+            while self.paused and self.running:
+                await asyncio.sleep(0.5)
                 if not self.running:
                     break
 
             if not self.running:
                 break
 
-            try:
-                # user dict dan user_id ni olish
-                user_id = user.get('user_id')
-                if not user_id:
-                    self.failed_count += 1
-                    continue
+            # Task yaratish
+            task = asyncio.create_task(self._send_to_user_safe(user))
+            tasks.append(task)
 
-                await send_advertisement_to_user(user_id, self)
-                self.sent_count += 1
+            # Batch to'lsa yoki oxirgi user bo'lsa
+            if len(tasks) >= BATCH_SIZE or i == len(users) - 1:
+                # Barcha tasklarni kutish
+                await asyncio.gather(*tasks, return_exceptions=True)
+                tasks.clear()
 
-            except (BotBlocked, ChatNotFound, Unauthorized):
-                self.failed_count += 1
-            except RetryAfter as e:
-                await asyncio.sleep(e.timeout)
-                # Qayta urinish
-                try:
-                    await send_advertisement_to_user(user_id, self)
-                    self.sent_count += 1
-                except:
-                    self.failed_count += 1
-            except Exception as e:
-                self.failed_count += 1
-                print(f"Yuborishda xatolik: {e}")
-
-            # Har 10 ta yuborilgandan keyin statusni yangilash
-            if (self.sent_count + self.failed_count) % 10 == 0:
-                await self.update_status_message()
+                # Progress yangilash
+                if (self.sent_count + self.failed_count) % PROGRESS_UPDATE_INTERVAL == 0:
+                    await self.update_status_message()
 
             # Flood controldan qochish
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(SEND_DELAY)
 
-        # Yakuniy status
-        self.running = False
-        self.paused = False
-        await self.update_status_message(finished=True)
+    async def _send_to_user_safe(self, user):
+        """Bitta userga xavfsiz yuborish - semaphore bilan"""
+        async with self._semaphore:
+            user_id = user.get('telegram_id')
 
-    async def pause(self):
-        self.paused = True
-        await self.update_status_message()
+            if not user_id:
+                self.failed_count += 1
+                return
 
-    async def resume(self):
-        self.paused = False
-        await self.update_status_message()
+            # Qayta urinish mexanizmi
+            for attempt in range(RETRY_ATTEMPTS):
+                try:
+                    await self._send_advertisement_to_user(user_id)
+                    self.sent_count += 1
+                    return
 
-    async def stop(self):
-        self.running = False
-        self.paused = False
-        await self.update_status_message(stopped=True)
+                except (BotBlocked, Unauthorized):
+                    # User botni bloklagan
+                    self.blocked_count += 1
+                    self.failed_count += 1
+                    return
 
-    async def update_status_message(self, finished=False, stopped=False):
-        if finished:
-            status = "✅ Yakunlandi"
-        elif stopped:
-            status = "⛔ To'xtatildi"
-        elif self.paused:
-            status = "⏸️ Pauza holatida"
-        else:
-            status = "⏳ Davom etmoqda..."
+                except ChatNotFound:
+                    # Chat topilmadi
+                    self.failed_count += 1
+                    return
 
-        text = (f"📤 Reklama #{self.ad_id}\n\n"
-                f"✅ Yuborilgan: {self.sent_count}\n"
-                f"❌ Yuborilmagan: {self.failed_count}\n"
-                f"📊 Jami: {self.sent_count + self.failed_count}/{self.total_users}\n\n"
-                f"Status: {status}")
+                except RetryAfter as e:
+                    # Flood control - kutish
+                    if attempt < RETRY_ATTEMPTS - 1:
+                        await asyncio.sleep(e.timeout)
+                        continue
+                    else:
+                        self.failed_count += 1
+                        return
 
-        if self.current_message:
-            try:
-                if finished or stopped:
-                    await self.current_message.edit_text(text, reply_markup=None)
-                else:
-                    await self.current_message.edit_text(
-                        text,
-                        reply_markup=get_status_keyboard(self.ad_id, self.paused)
-                    )
-            except MessageNotModified:
-                pass
-            except Exception as e:
-                print(f"Status yangilashda xatolik: {e}")
+                except TelegramAPIError as e:
+                    # Boshqa API xatolari
+                    if attempt < RETRY_ATTEMPTS - 1:
+                        await asyncio.sleep(1)
+                        continue
+                    else:
+                        self.failed_count += 1
+                        return
 
+                except Exception as e:
+                    # Kutilmagan xatolar
+                    print(f"Unexpected error sending to {user_id}: {e}")
+                    self.failed_count += 1
+                    return
 
-async def send_advertisement_to_user(chat_id, advertisement: Advertisement):
-    """Foydalanuvchiga reklama yuborish"""
-    message = advertisement.message
-    ad_type = advertisement.ad_type
-    keyboard = advertisement.keyboard
+    async def _send_advertisement_to_user(self, chat_id):
+        """Userga reklama yuborish"""
+        message = self.message
+        ad_type = self.ad_type
+        keyboard = self.keyboard
 
-    # Caption yoki text olish
-    caption = message.caption if message.caption else (message.text if message.text else "")
+        caption = message.caption if message.caption else (message.text if message.text else "")
 
-    try:
         if ad_type == 'ad_type_text':
-            # Faqat matn
             await bot.send_message(chat_id=chat_id, text=caption or "Reklama")
 
         elif ad_type == 'ad_type_button':
-            # Tugmali kontent
-            await handle_content_with_keyboard(chat_id, message, keyboard, caption)
+            await self._send_with_keyboard(chat_id, message, keyboard, caption)
 
         elif ad_type == 'ad_type_forward':
-            # Forward
             await bot.forward_message(
                 chat_id=chat_id,
                 from_chat_id=message.chat.id,
                 message_id=message.message_id
             )
 
-        elif ad_type == 'ad_type_any':
-            # Har qanday kontent
-            await handle_non_text_content(chat_id, message)
-
         else:
-            # Default
-            await handle_non_text_content(chat_id, message)
+            await self._send_content(chat_id, message)
 
-    except Exception as e:
-        raise e
+    async def _send_with_keyboard(self, chat_id, message, keyboard, caption):
+        """Tugmali kontent yuborish"""
+        content_type = message.content_type
 
-
-async def handle_content_with_keyboard(chat_id, message, keyboard, caption):
-    """Tugmali kontent yuborish"""
-    try:
-        if message.content_type == types.ContentType.TEXT:
+        if content_type == types.ContentType.TEXT:
             await bot.send_message(chat_id=chat_id, text=caption, reply_markup=keyboard)
 
-        elif message.content_type == types.ContentType.PHOTO:
+        elif content_type == types.ContentType.PHOTO:
             await bot.send_photo(
                 chat_id=chat_id,
                 photo=message.photo[-1].file_id,
@@ -228,7 +238,7 @@ async def handle_content_with_keyboard(chat_id, message, keyboard, caption):
                 reply_markup=keyboard
             )
 
-        elif message.content_type == types.ContentType.VIDEO:
+        elif content_type == types.ContentType.VIDEO:
             await bot.send_video(
                 chat_id=chat_id,
                 video=message.video.file_id,
@@ -236,7 +246,7 @@ async def handle_content_with_keyboard(chat_id, message, keyboard, caption):
                 reply_markup=keyboard
             )
 
-        elif message.content_type == types.ContentType.DOCUMENT:
+        elif content_type == types.ContentType.DOCUMENT:
             await bot.send_document(
                 chat_id=chat_id,
                 document=message.document.file_id,
@@ -244,15 +254,7 @@ async def handle_content_with_keyboard(chat_id, message, keyboard, caption):
                 reply_markup=keyboard
             )
 
-        elif message.content_type == types.ContentType.AUDIO:
-            await bot.send_audio(
-                chat_id=chat_id,
-                audio=message.audio.file_id,
-                caption=caption,
-                reply_markup=keyboard
-            )
-
-        elif message.content_type == types.ContentType.ANIMATION:
+        elif content_type == types.ContentType.ANIMATION:
             await bot.send_animation(
                 chat_id=chat_id,
                 animation=message.animation.file_id,
@@ -263,94 +265,154 @@ async def handle_content_with_keyboard(chat_id, message, keyboard, caption):
         else:
             await bot.send_message(chat_id=chat_id, text=caption, reply_markup=keyboard)
 
-    except Exception as e:
-        raise e
+    async def _send_content(self, chat_id, message):
+        """Har qanday kontentni yuborish"""
+        content_type = message.content_type
 
+        if content_type == types.ContentType.TEXT:
+            await bot.send_message(chat_id=chat_id, text=message.text or "Reklama")
 
-async def handle_non_text_content(chat_id, message):
-    """Har qanday kontentni yuborish"""
-    try:
-        if message.content_type == types.ContentType.TEXT:
-            text = message.text or "Reklama"
-            await bot.send_message(chat_id=chat_id, text=text)
-
-        elif message.content_type == types.ContentType.PHOTO:
+        elif content_type == types.ContentType.PHOTO:
             await bot.send_photo(
                 chat_id=chat_id,
                 photo=message.photo[-1].file_id,
                 caption=message.caption
             )
 
-        elif message.content_type == types.ContentType.VIDEO:
+        elif content_type == types.ContentType.VIDEO:
             await bot.send_video(
                 chat_id=chat_id,
                 video=message.video.file_id,
                 caption=message.caption
             )
 
-        elif message.content_type == types.ContentType.DOCUMENT:
+        elif content_type == types.ContentType.DOCUMENT:
             await bot.send_document(
                 chat_id=chat_id,
                 document=message.document.file_id,
                 caption=message.caption
             )
 
-        elif message.content_type == types.ContentType.AUDIO:
+        elif content_type == types.ContentType.AUDIO:
             await bot.send_audio(
                 chat_id=chat_id,
                 audio=message.audio.file_id,
                 caption=message.caption
             )
 
-        elif message.content_type == types.ContentType.ANIMATION:
+        elif content_type == types.ContentType.ANIMATION:
             await bot.send_animation(
                 chat_id=chat_id,
                 animation=message.animation.file_id,
                 caption=message.caption
             )
 
-        elif message.content_type == types.ContentType.VOICE:
+        elif content_type == types.ContentType.VOICE:
             await bot.send_voice(
                 chat_id=chat_id,
                 voice=message.voice.file_id,
                 caption=message.caption
             )
 
-        elif message.content_type == types.ContentType.VIDEO_NOTE:
+        elif content_type == types.ContentType.VIDEO_NOTE:
             await bot.send_video_note(
                 chat_id=chat_id,
                 video_note=message.video_note.file_id
             )
 
         else:
-            await bot.send_message(
-                chat_id=chat_id,
-                text="Reklama (kontent qo'llab-quvvatlanmaydi)"
-            )
+            await bot.send_message(chat_id=chat_id, text="Reklama")
 
-    except Exception as e:
-        raise e
+    def _get_status_text(self, finished=False, stopped=False):
+        """Status textini yaratish"""
+        if finished:
+            status = "✅ Yakunlandi"
+        elif stopped:
+            status = "⛔ To'xtatildi"
+        elif self.paused:
+            status = "⏸️ Pauza"
+        else:
+            status = "⏳ Yuborilmoqda..."
+
+        progress_percent = 0
+        if self.total_users > 0:
+            progress_percent = ((self.sent_count + self.failed_count) / self.total_users) * 100
+
+        progress_bar = "█" * int(progress_percent / 5) + "░" * (20 - int(progress_percent / 5))
+
+        text = (
+            f"📤 <b>Reklama #{self.ad_id}</b>\n\n"
+            f"[{progress_bar}] {progress_percent:.1f}%\n\n"
+            f"✅ Yuborildi: <b>{self.sent_count:,}</b>\n"
+            f"❌ Yuborilmadi: <b>{self.failed_count:,}</b>\n"
+        )
+
+        if self.blocked_count > 0:
+            text += f"🚫 Bloklagan: <b>{self.blocked_count:,}</b>\n"
+
+        text += (
+            f"📊 Jami: <b>{self.sent_count + self.failed_count:,}</b> / <b>{self.total_users:,}</b>\n\n"
+            f"Status: {status}"
+        )
+
+        return text
+
+    async def pause(self):
+        """Pauzaga qo'yish"""
+        self.paused = True
+        await self.update_status_message()
+
+    async def resume(self):
+        """Davom ettirish"""
+        self.paused = False
+        await self.update_status_message()
+
+    async def stop(self):
+        """To'xtatish"""
+        self.running = False
+        self.paused = False
+
+        # Taskni bekor qilish
+        if self.task and not self.task.done():
+            self.task.cancel()
+
+        await self.update_status_message(stopped=True)
+
+    async def update_status_message(self, finished=False, stopped=False):
+        """Status xabarini yangilash"""
+        if not self.current_message:
+            return
+
+        text = self._get_status_text(finished, stopped)
+
+        try:
+            if finished or stopped:
+                await self.current_message.edit_text(
+                    text,
+                    reply_markup=None,
+                    parse_mode="HTML"
+                )
+            else:
+                await self.current_message.edit_text(
+                    text,
+                    reply_markup=get_status_keyboard(self.ad_id, self.paused),
+                    parse_mode="HTML"
+                )
+        except MessageNotModified:
+            pass
+        except Exception as e:
+            print(f"Status yangilashda xato: {e}")
 
 
-async def check_admin_permission(telegram_id: int):
-    """Admin ekanligini tekshirish"""
-    return telegram_id in ADMINS
+# ============ HANDLERLAR ============
 
-
-@dp.message_handler(Command("reklama"), state="*")
-@dp.message_handler(lambda m: m.text == "📣 Reklama", state="*")
+@dp.message_handler(Command("reklama"), state="*", user_id=ADMINS)
+@dp.message_handler(lambda m: m.text == "📣 Reklama", state="*", user_id=ADMINS)
 async def reklama_handler(message: types.Message, state: FSMContext):
     """Reklama yuborish boshlash"""
-    telegram_id = message.from_user.id
-
-    if not await check_admin_permission(telegram_id):
-        await message.reply("❌ Sizda reklama yuborish uchun ruxsat yo'q!")
-        return
-
-    # Oldingi holatni tozalash
     await state.finish()
-
     await ReklamaTuriState.tur.set()
+
     await message.answer(
         "📢 <b>REKLAMA YUBORISH</b>\n\n"
         "Quyidagi reklama turlaridan birini tanlang:",
@@ -361,7 +423,8 @@ async def reklama_handler(message: types.Message, state: FSMContext):
 
 @dp.callback_query_handler(
     lambda c: c.data in ["ad_type_text", "ad_type_forward", "ad_type_button", "ad_type_any"],
-    state=ReklamaTuriState.tur
+    state=ReklamaTuriState.tur,
+    user_id=ADMINS
 )
 async def handle_ad_type(callback_query: types.CallbackQuery, state: FSMContext):
     """Reklama turini tanlash"""
@@ -381,11 +444,13 @@ async def handle_ad_type(callback_query: types.CallbackQuery, state: FSMContext)
         reply_markup=get_time_keyboard(),
         parse_mode="HTML"
     )
+    await callback_query.answer()
 
 
 @dp.callback_query_handler(
     lambda c: c.data in ["send_now", "send_later"],
-    state=ReklamaTuriState.vaqt
+    state=ReklamaTuriState.vaqt,
+    user_id=ADMINS
 )
 async def handle_send_time(callback_query: types.CallbackQuery, state: FSMContext):
     """Yuborish vaqtini tanlash"""
@@ -404,14 +469,16 @@ async def handle_send_time(callback_query: types.CallbackQuery, state: FSMContex
         await ReklamaTuriState.content.set()
         await callback_query.message.edit_text(
             "📝 <b>Reklama kontentini yuboring:</b>\n\n"
-            "• Matn, rasm, video yoki boshqa kontent yuborishingiz mumkin\n"
+            "• Matn, rasm, video yoki boshqa kontent\n"
             "• Forward ham qilishingiz mumkin",
             reply_markup=get_cancel_keyboard(),
             parse_mode="HTML"
         )
 
+    await callback_query.answer()
 
-@dp.message_handler(state=ReklamaTuriState.time_value)
+
+@dp.message_handler(state=ReklamaTuriState.time_value, user_id=ADMINS)
 async def handle_time_input(message: types.Message, state: FSMContext):
     """Vaqt kiritish"""
     time_value = message.text.strip()
@@ -421,7 +488,6 @@ async def handle_time_input(message: types.Message, state: FSMContext):
         now = datetime.datetime.now()
         send_time = send_time.replace(year=now.year, month=now.month, day=now.day)
 
-        # Agar vaqt o'tgan bo'lsa, ertaga o'tkazish
         if send_time < now:
             send_time += datetime.timedelta(days=1)
             tomorrow_text = " (ertaga)"
@@ -432,7 +498,7 @@ async def handle_time_input(message: types.Message, state: FSMContext):
         await ReklamaTuriState.content.set()
 
         await message.reply(
-            f"✅ Vaqt o'rnatildi: <b>{send_time.strftime('%H:%M')}{tomorrow_text}</b>\n\n"
+            f"✅ Vaqt: <b>{send_time.strftime('%H:%M')}{tomorrow_text}</b>\n\n"
             "📝 Endi reklama kontentini yuboring:",
             reply_markup=get_cancel_keyboard(),
             parse_mode="HTML"
@@ -442,48 +508,43 @@ async def handle_time_input(message: types.Message, state: FSMContext):
         await message.reply(
             "❌ <b>Vaqt formati noto'g'ri!</b>\n\n"
             "To'g'ri format: <code>HH:MM</code>\n"
-            "Masalan: <code>14:30</code> yoki <code>09:15</code>",
+            "Masalan: <code>14:30</code>",
             parse_mode="HTML"
         )
 
 
-@dp.message_handler(state=ReklamaTuriState.content, content_types=types.ContentType.ANY)
-async def rek_state(message: types.Message, state: FSMContext):
+@dp.message_handler(
+    state=ReklamaTuriState.content,
+    content_types=types.ContentType.ANY,
+    user_id=ADMINS
+)
+async def handle_content(message: types.Message, state: FSMContext):
     """Kontent qabul qilish"""
-    telegram_id = message.from_user.id
-
-    if not await check_admin_permission(telegram_id):
-        await message.reply("❌ Ruxsat yo'q!")
-        await state.finish()
-        return
-
     data = await state.get_data()
     ad_type = data.get('ad_type')
 
     if ad_type == 'ad_type_button':
-        # Tugmali reklama uchun tugmalarni so'rash
         await state.update_data(ad_content=message)
         await ReklamaTuriState.buttons.set()
         await message.reply(
             "🔘 <b>Tugmalarni kiriting:</b>\n\n"
-            "Format: <code>Tugma matni - URL</code>\n\n"
-            "Bir nechta tugma uchun vergul bilan ajrating:\n"
-            "<code>Telegram - https://t.me, "
+            "Format: <code>Matn - URL</code>\n\n"
+            "Bir nechta tugma:\n"
+            "<code>Telegram - https://t.me,\n"
             "Website - https://example.com</code>",
             reply_markup=get_cancel_keyboard(),
             parse_mode="HTML"
         )
     else:
-        # Boshqa turlar uchun to'g'ridan-to'g'ri tasdiqlash
         await state.update_data(ad_content=message)
         await message.reply(
             "✅ Kontent qabul qilindi!\n\n"
-            "Reklamani yuborishni tasdiqlaysizmi?",
+            "Yuborishni tasdiqlaysizmi?",
             reply_markup=get_confirm_keyboard()
         )
 
 
-@dp.message_handler(state=ReklamaTuriState.buttons)
+@dp.message_handler(state=ReklamaTuriState.buttons, user_id=ADMINS)
 async def handle_buttons_input(message: types.Message, state: FSMContext):
     """Tugmalarni qabul qilish"""
     buttons_text = message.text.strip()
@@ -493,18 +554,18 @@ async def handle_buttons_input(message: types.Message, state: FSMContext):
         for button_data in buttons_text.split(','):
             parts = button_data.strip().split(' - ')
             if len(parts) != 2:
-                raise ValueError("Incorrect format")
+                raise ValueError("Format noto'g'ri")
 
             text = parts[0].strip()
             url = parts[1].strip()
 
             if not text or not url:
-                raise ValueError("Empty text or URL")
+                raise ValueError("Bo'sh matn yoki URL")
 
             buttons.append(types.InlineKeyboardButton(text=text, url=url))
 
         if not buttons:
-            raise ValueError("No buttons")
+            raise ValueError("Tugmalar yo'q")
 
         keyboard = types.InlineKeyboardMarkup(row_width=1)
         keyboard.add(*buttons)
@@ -512,118 +573,107 @@ async def handle_buttons_input(message: types.Message, state: FSMContext):
         await state.update_data(keyboard=keyboard)
         await message.reply(
             "✅ Tugmalar qo'shildi!\n\n"
-            "Reklamani yuborishni tasdiqlaysizmi?",
+            "Yuborishni tasdiqlaysizmi?",
             reply_markup=get_confirm_keyboard()
         )
 
-    except Exception as e:
+    except Exception:
         await message.reply(
-            "❌ <b>Tugmalar formati noto'g'ri!</b>\n\n"
-            "To'g'ri format:\n"
-            "<code>Tugma1 - URL1, Tugma2 - URL2</code>\n\n"
-            "Masalan:\n"
-            "<code>Telegram - https://t.me, "
-            "Website - https://example.com</code>",
+            "❌ <b>Format noto'g'ri!</b>\n\n"
+            "To'g'ri:\n"
+            "<code>Matn1 - URL1, Matn2 - URL2</code>",
             parse_mode="HTML"
         )
 
 
-@dp.callback_query_handler(lambda c: c.data == "cancel_ad", state='*')
+@dp.callback_query_handler(lambda c: c.data == "cancel_ad", state='*', user_id=ADMINS)
 async def cancel_ad_handler(callback_query: types.CallbackQuery, state: FSMContext):
-    """Reklamani bekor qilish"""
+    """Bekor qilish"""
     await state.finish()
-    await callback_query.message.edit_text("❌ Reklama yuborish bekor qilindi")
+    await callback_query.message.edit_text("❌ Bekor qilindi")
     await callback_query.answer()
 
 
-@dp.callback_query_handler(lambda c: c.data == "confirm_ad", state='*')
+@dp.callback_query_handler(lambda c: c.data == "confirm_ad", state='*', user_id=ADMINS)
 async def confirm_ad_handler(callback_query: types.CallbackQuery, state: FSMContext):
-    """Reklamani tasdiqlash va yuborish"""
+    """Tasdiqlash va yuborish"""
     data = await state.get_data()
-    ad_type = data.get('ad_type')
-    ad_content = data.get('ad_content')
-    keyboard = data.get('keyboard')
-    send_time = data.get('send_time_value') if data.get('send_time') == 'send_later' else None
 
     ad_id = len(advertisements) + 1
-
     advertisement = Advertisement(
         ad_id=ad_id,
-        message=ad_content,
-        ad_type=ad_type,
-        keyboard=keyboard,
-        send_time=send_time,
+        message=data.get('ad_content'),
+        ad_type=data.get('ad_type'),
+        keyboard=data.get('keyboard'),
+        send_time=data.get('send_time_value') if data.get('send_time') == 'send_later' else None,
         creator_id=callback_query.from_user.id
     )
 
     advertisements.append(advertisement)
     await state.finish()
 
-    if send_time:
+    if advertisement.send_time:
         await callback_query.message.edit_text(
             f"✅ Reklama #{ad_id} jadvalga qo'shildi!\n\n"
-            f"⏰ Yuborish vaqti: {send_time.strftime('%d.%m.%Y %H:%M')}"
+            f"⏰ Vaqt: {advertisement.send_time.strftime('%d.%m.%Y %H:%M')}"
         )
     else:
         await callback_query.message.edit_text(
-            f"✅ Reklama #{ad_id} yuborish boshlandi!"
+            f"✅ Reklama #{ad_id} boshlandi!"
         )
 
-    # Asinxron yuborish
     advertisement.task = asyncio.create_task(advertisement.start())
     await callback_query.answer()
 
 
-@dp.callback_query_handler(lambda c: c.data.startswith("pause_ad_"))
+@dp.callback_query_handler(lambda c: c.data.startswith("pause_ad_"), user_id=ADMINS)
 async def pause_ad_handler(callback_query: types.CallbackQuery):
-    """Reklamani pauza qilish"""
+    """Pauzaga qo'yish"""
     ad_id = int(callback_query.data.split("_")[-1])
-    advertisement = next((ad for ad in advertisements if ad.ad_id == ad_id), None)
+    ad = next((a for a in advertisements if a.ad_id == ad_id), None)
 
-    if advertisement and advertisement.running:
-        await advertisement.pause()
-        await callback_query.answer("⏸️ Reklama pauza qilindi")
+    if ad and ad.running:
+        await ad.pause()
+        await callback_query.answer("⏸️ Pauza")
     else:
-        await callback_query.answer("❌ Reklama topilmadi yoki ishlamayapti", show_alert=True)
+        await callback_query.answer("❌ Topilmadi", show_alert=True)
 
 
-@dp.callback_query_handler(lambda c: c.data.startswith("resume_ad_"))
+@dp.callback_query_handler(lambda c: c.data.startswith("resume_ad_"), user_id=ADMINS)
 async def resume_ad_handler(callback_query: types.CallbackQuery):
-    """Reklamani davom ettirish"""
+    """Davom ettirish"""
     ad_id = int(callback_query.data.split("_")[-1])
-    advertisement = next((ad for ad in advertisements if ad.ad_id == ad_id), None)
+    ad = next((a for a in advertisements if a.ad_id == ad_id), None)
 
-    if advertisement and advertisement.paused:
-        await advertisement.resume()
-        await callback_query.answer("▶️ Reklama davom ettirildi")
+    if ad and ad.paused:
+        await ad.resume()
+        await callback_query.answer("▶️ Davom ettirildi")
     else:
-        await callback_query.answer("❌ Reklama topilmadi yoki pauza holatida emas", show_alert=True)
+        await callback_query.answer("❌ Topilmadi", show_alert=True)
 
 
-@dp.callback_query_handler(lambda c: c.data.startswith("stop_ad_"))
+@dp.callback_query_handler(lambda c: c.data.startswith("stop_ad_"), user_id=ADMINS)
 async def stop_ad_handler(callback_query: types.CallbackQuery):
-    """Reklamani to'xtatish"""
+    """To'xtatish"""
     ad_id = int(callback_query.data.split("_")[-1])
-    advertisement = next((ad for ad in advertisements if ad.ad_id == ad_id), None)
+    ad = next((a for a in advertisements if a.ad_id == ad_id), None)
 
-    if advertisement and advertisement.running:
-        await advertisement.stop()
-        await callback_query.answer("⛔ Reklama to'xtatildi")
+    if ad and ad.running:
+        await ad.stop()
+        await callback_query.answer("⛔ To'xtatildi")
     else:
-        await callback_query.answer("❌ Reklama topilmadi yoki allaqachon to'xtagan", show_alert=True)
+        await callback_query.answer("❌ Topilmadi", show_alert=True)
 
 
 # ============ KLAVIATURALAR ============
 
 def get_cancel_keyboard():
-    """Bekor qilish klaviaturasi"""
     keyboard = types.InlineKeyboardMarkup()
     keyboard.add(types.InlineKeyboardButton("❌ Bekor qilish", callback_data="cancel_ad"))
     return keyboard
 
 
 def get_confirm_keyboard():
-    """Tasdiqlash klaviaturasi"""
     keyboard = types.InlineKeyboardMarkup()
     keyboard.add(types.InlineKeyboardButton("✅ Tasdiqlash", callback_data="confirm_ad"))
     keyboard.add(types.InlineKeyboardButton("❌ Bekor qilish", callback_data="cancel_ad"))
@@ -631,7 +681,6 @@ def get_confirm_keyboard():
 
 
 def get_ad_type_keyboard():
-    """Reklama turi klaviaturasi"""
     keyboard = types.InlineKeyboardMarkup(row_width=2)
     keyboard.add(
         types.InlineKeyboardButton("📝 Matnli", callback_data="ad_type_text"),
@@ -645,19 +694,17 @@ def get_ad_type_keyboard():
 
 
 def get_time_keyboard():
-    """Vaqt klaviaturasi"""
     keyboard = types.InlineKeyboardMarkup()
-    keyboard.add(types.InlineKeyboardButton("⚡ Hozir yuborish", callback_data="send_now"))
-    keyboard.add(types.InlineKeyboardButton("⏰ Keyinroq yuborish", callback_data="send_later"))
+    keyboard.add(types.InlineKeyboardButton("⚡ Hozir", callback_data="send_now"))
+    keyboard.add(types.InlineKeyboardButton("⏰ Keyinroq", callback_data="send_later"))
     return keyboard
 
 
 def get_status_keyboard(ad_id, paused=False):
-    """Status klaviaturasi"""
     keyboard = types.InlineKeyboardMarkup()
 
     if paused:
-        keyboard.add(types.InlineKeyboardButton("▶️ Davom ettirish", callback_data=f"resume_ad_{ad_id}"))
+        keyboard.add(types.InlineKeyboardButton("▶️ Davom", callback_data=f"resume_ad_{ad_id}"))
     else:
         keyboard.add(types.InlineKeyboardButton("⏸️ Pauza", callback_data=f"pause_ad_{ad_id}"))
 

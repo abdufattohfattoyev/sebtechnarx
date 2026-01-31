@@ -1,4 +1,4 @@
-# reklama.py
+# handlers/reklama.py - TO'LIQ TUZATILGAN VERSIYA (AIOGRAM 2.25.2)
 import datetime
 import asyncio
 from data.config import ADMINS
@@ -10,7 +10,7 @@ from aiogram.utils.exceptions import BotBlocked, ChatNotFound, RetryAfter, Unaut
 from aiogram.dispatcher.filters import Command
 
 # Stats database import
-from utils.db_api.stats_database import get_all_users
+from utils.db_api.user_database import get_all_users
 
 # Reklama yuborish jarayonlarini saqlash uchun ro'yxat
 advertisements = []
@@ -97,8 +97,8 @@ class Advertisement:
                 break
 
             try:
-                # user dict dan user_id ni olish
-                user_id = user.get('user_id')
+                # ⭐ TUZATILDI: user dict dan telegram_id ni olish
+                user_id = user.get('telegram_id')
                 if not user_id:
                     self.failed_count += 1
                     continue
@@ -337,16 +337,10 @@ async def check_admin_permission(telegram_id: int):
     return telegram_id in ADMINS
 
 
-@dp.message_handler(Command("reklama"), state="*")
-@dp.message_handler(lambda m: m.text == "📣 Reklama", state="*")
+@dp.message_handler(Command("reklama"), state="*", user_id=ADMINS)
+@dp.message_handler(lambda m: m.text == "📣 Reklama", state="*", user_id=ADMINS)
 async def reklama_handler(message: types.Message, state: FSMContext):
     """Reklama yuborish boshlash"""
-    telegram_id = message.from_user.id
-
-    if not await check_admin_permission(telegram_id):
-        await message.reply("❌ Sizda reklama yuborish uchun ruxsat yo'q!")
-        return
-
     # Oldingi holatni tozalash
     await state.finish()
 
@@ -361,7 +355,8 @@ async def reklama_handler(message: types.Message, state: FSMContext):
 
 @dp.callback_query_handler(
     lambda c: c.data in ["ad_type_text", "ad_type_forward", "ad_type_button", "ad_type_any"],
-    state=ReklamaTuriState.tur
+    state=ReklamaTuriState.tur,
+    user_id=ADMINS
 )
 async def handle_ad_type(callback_query: types.CallbackQuery, state: FSMContext):
     """Reklama turini tanlash"""
@@ -381,11 +376,13 @@ async def handle_ad_type(callback_query: types.CallbackQuery, state: FSMContext)
         reply_markup=get_time_keyboard(),
         parse_mode="HTML"
     )
+    await callback_query.answer()
 
 
 @dp.callback_query_handler(
     lambda c: c.data in ["send_now", "send_later"],
-    state=ReklamaTuriState.vaqt
+    state=ReklamaTuriState.vaqt,
+    user_id=ADMINS
 )
 async def handle_send_time(callback_query: types.CallbackQuery, state: FSMContext):
     """Yuborish vaqtini tanlash"""
@@ -410,8 +407,10 @@ async def handle_send_time(callback_query: types.CallbackQuery, state: FSMContex
             parse_mode="HTML"
         )
 
+    await callback_query.answer()
 
-@dp.message_handler(state=ReklamaTuriState.time_value)
+
+@dp.message_handler(state=ReklamaTuriState.time_value, user_id=ADMINS)
 async def handle_time_input(message: types.Message, state: FSMContext):
     """Vaqt kiritish"""
     time_value = message.text.strip()
@@ -447,16 +446,9 @@ async def handle_time_input(message: types.Message, state: FSMContext):
         )
 
 
-@dp.message_handler(state=ReklamaTuriState.content, content_types=types.ContentType.ANY)
+@dp.message_handler(state=ReklamaTuriState.content, content_types=types.ContentType.ANY, user_id=ADMINS)
 async def rek_state(message: types.Message, state: FSMContext):
     """Kontent qabul qilish"""
-    telegram_id = message.from_user.id
-
-    if not await check_admin_permission(telegram_id):
-        await message.reply("❌ Ruxsat yo'q!")
-        await state.finish()
-        return
-
     data = await state.get_data()
     ad_type = data.get('ad_type')
 
@@ -483,7 +475,7 @@ async def rek_state(message: types.Message, state: FSMContext):
         )
 
 
-@dp.message_handler(state=ReklamaTuriState.buttons)
+@dp.message_handler(state=ReklamaTuriState.buttons, user_id=ADMINS)
 async def handle_buttons_input(message: types.Message, state: FSMContext):
     """Tugmalarni qabul qilish"""
     buttons_text = message.text.strip()
@@ -528,7 +520,7 @@ async def handle_buttons_input(message: types.Message, state: FSMContext):
         )
 
 
-@dp.callback_query_handler(lambda c: c.data == "cancel_ad", state='*')
+@dp.callback_query_handler(lambda c: c.data == "cancel_ad", state='*', user_id=ADMINS)
 async def cancel_ad_handler(callback_query: types.CallbackQuery, state: FSMContext):
     """Reklamani bekor qilish"""
     await state.finish()
@@ -536,7 +528,7 @@ async def cancel_ad_handler(callback_query: types.CallbackQuery, state: FSMConte
     await callback_query.answer()
 
 
-@dp.callback_query_handler(lambda c: c.data == "confirm_ad", state='*')
+@dp.callback_query_handler(lambda c: c.data == "confirm_ad", state='*', user_id=ADMINS)
 async def confirm_ad_handler(callback_query: types.CallbackQuery, state: FSMContext):
     """Reklamani tasdiqlash va yuborish"""
     data = await state.get_data()
@@ -574,7 +566,7 @@ async def confirm_ad_handler(callback_query: types.CallbackQuery, state: FSMCont
     await callback_query.answer()
 
 
-@dp.callback_query_handler(lambda c: c.data.startswith("pause_ad_"))
+@dp.callback_query_handler(lambda c: c.data.startswith("pause_ad_"), user_id=ADMINS)
 async def pause_ad_handler(callback_query: types.CallbackQuery):
     """Reklamani pauza qilish"""
     ad_id = int(callback_query.data.split("_")[-1])
@@ -587,7 +579,7 @@ async def pause_ad_handler(callback_query: types.CallbackQuery):
         await callback_query.answer("❌ Reklama topilmadi yoki ishlamayapti", show_alert=True)
 
 
-@dp.callback_query_handler(lambda c: c.data.startswith("resume_ad_"))
+@dp.callback_query_handler(lambda c: c.data.startswith("resume_ad_"), user_id=ADMINS)
 async def resume_ad_handler(callback_query: types.CallbackQuery):
     """Reklamani davom ettirish"""
     ad_id = int(callback_query.data.split("_")[-1])
@@ -600,7 +592,7 @@ async def resume_ad_handler(callback_query: types.CallbackQuery):
         await callback_query.answer("❌ Reklama topilmadi yoki pauza holatida emas", show_alert=True)
 
 
-@dp.callback_query_handler(lambda c: c.data.startswith("stop_ad_"))
+@dp.callback_query_handler(lambda c: c.data.startswith("stop_ad_"), user_id=ADMINS)
 async def stop_ad_handler(callback_query: types.CallbackQuery):
     """Reklamani to'xtatish"""
     ad_id = int(callback_query.data.split("_")[-1])

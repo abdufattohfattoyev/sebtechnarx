@@ -163,7 +163,7 @@ def admin_kb():
     # Ikkinchi qator - Import va Export
     kb.row(
         KeyboardButton("📥 Narxlarni import qilish"),
-        KeyboardButton("📤 Excel export")
+        KeyboardButton(text="📣 Reklama")
     )
 
     # Uchinchi qator - Qo'shimcha funksiyalar

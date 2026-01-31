@@ -162,14 +162,14 @@ def admin_kb():
 
     # Ikkinchi qator - Import va Export
     kb.row(
-        KeyboardButton("📥 Excel import"),
+        KeyboardButton("📥 Narxlarni import qilish"),
         KeyboardButton("📤 Excel export")
     )
 
     # Uchinchi qator - Qo'shimcha funksiyalar
     kb.row(
         KeyboardButton("📱 Namuna"),
-        KeyboardButton("🧹 Bazani tozalash")
+        KeyboardButton("🗑 Narxlarni tozalash")
     )
 
     # To'rtinchi qator - Orqaga
