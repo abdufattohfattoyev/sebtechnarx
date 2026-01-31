@@ -29,7 +29,7 @@ services:
       # Bot konteyner ichida Postgres hosti "db" bo'ladi
       DB_HOST: db
     volumes:
-      - ./data:/app/data
+      - ./data:/app/storage
     depends_on:
       db:
         condition: service_healthy
