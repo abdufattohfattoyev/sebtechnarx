@@ -38,7 +38,7 @@ from utils.db_api.user_database import (
     check_can_price,
     create_user,
     get_user_balance,
-    use_pricing as use_pricing_local
+    use_pricing as use_pricing_local, update_phone_number
 )
 
 # ================ CONSTANTS ================
@@ -231,117 +231,285 @@ async def auto_check_payment(order_id: str, user_id: int, state: FSMContext):
 # ================ START HANDLER (⭐ MAJBURIY OBUNA BILAN) ================
 @dp.message_handler(commands=['start'], state='*')
 async def start(message: types.Message, state: FSMContext):
-    """Start - MAJBURIY OBUNA BILAN"""
+    """
+    Start handler - MAJBURIY OBUNA BILAN (TO'LIQ TUZATILGAN)
+    """
     await state.finish()
     user = message.from_user
 
+    # ============================================================
     # ⭐ 1. OBUNA TEKSHIRISH (Adminlar uchun yo'q)
+    # ============================================================
     if user.id not in ADMINS:
         is_subscribed = await check_subscription(user.id)
 
         if not is_subscribed:
-            text = SUBSCRIPTION_TEXT.format(channel=CHANNEL_USERNAME)
-            await message.answer(text, reply_markup=subscription_keyboard(), parse_mode="HTML")
-            return
+            # Obuna yo'q - obuna xabarini yuborish
+            await message.answer(
+                SUBSCRIPTION_TEXT,
+                reply_markup=subscription_keyboard(),
+                parse_mode="HTML"
+            )
+            return  # ⚠️ To'xtatish - obuna bo'lmaguncha davom etmaydi
 
-    # 2. USER YARATISH
+    # ============================================================
+    # ⭐ 2. USER YARATISH/YANGILASH (API + LOCAL)
+    # ============================================================
     try:
+        # API dan user yaratish/olish
         api_task = api.create_user(
             user.id,
             user.full_name or f"User{user.id}",
             user.username or ""
         )
 
+        # Local database ga user yaratish/yangilash
         local_task = asyncio.to_thread(
             create_user,
             user.id,
             user.full_name or f"User{user.id}",
             user.username or "",
-            None
+            None  # phone_number
         )
 
-        api_result, local_result = await asyncio.gather(api_task, local_task, return_exceptions=True)
+        # Parallel bajarish
+        api_result, local_result = await asyncio.gather(
+            api_task,
+            local_task,
+            return_exceptions=True
+        )
 
+        # API xatosi
         if isinstance(api_result, Exception):
-            await message.answer("❌ Server xato. Qaytadan /start")
+            logger.error(f"API error in start: {api_result}")
+            await message.answer(
+                "❌ Server bilan aloqa yo'q. Iltimos qaytadan /start bosing.",
+                parse_mode="HTML"
+            )
             return
 
-        phone = api_result.get('phone')
-        balance = api_result.get('balance', 0)
+        # Local DB xatosi (lekin davom etamiz)
+        if isinstance(local_result, Exception):
+            logger.error(f"Local DB error in start: {local_result}")
 
-        # Phone lokalga yozish
-        if phone:
+        # ============================================================
+        # ⭐ 3. MA'LUMOTLARNI OLISH
+        # ============================================================
+
+        # API dan ma'lumotlar
+        phone = api_result.get('phone')
+        api_balance = int(api_result.get('balance', 0))
+
+        # Local dan bepul urinishlarni olish
+        free_trials = 5  # Default
+        local_balance = 0
+
+        try:
+            local_data = get_user_balance(user.id)
+            if local_data.get('success'):
+                free_trials = int(local_data.get('free_trials_left', 5))
+                local_balance = int(local_data.get('balance', 0))
+        except Exception as e:
+            logger.warning(f"Failed to get local balance: {e}")
+
+        # Balanslarni birlashtirish
+        total_balance = api_balance + local_balance
+
+        # ============================================================
+        # ⭐ 4. TELEFON RAQAMNI LOKAL BAZAGA SINXLASH
+        # ============================================================
+        if phone and not isinstance(local_result, Exception):
             try:
                 await asyncio.to_thread(
-                    __import__('utils.db_api.user_database', fromlist=['update_phone_number']).update_phone_number,
+                    update_phone_number,
                     user.id,
                     phone
                 )
+                logger.info(f"Phone synced for user {user.id}")
             except Exception as e:
-                logger.warning(f"Local phone sync failed: {e}")
+                logger.warning(f"Phone sync failed: {e}")
 
-        free_trials = 5
-        if not isinstance(local_result, Exception):
+    except Exception as e:
+        logger.error(f"Critical error in start handler: {e}", exc_info=True)
+        await message.answer(
+            "❌ Xatolik yuz berdi. Iltimos qaytadan /start bosing.",
+            parse_mode="HTML"
+        )
+        return
+
+    # ============================================================
+    # ⭐ 5. TELEFON RAQAM TEKSHIRISH
+    # ============================================================
+    if not phone:
+        # Telefon raqam yo'q - so'rash
+        welcome_text = f"""👋 <b>{user.full_name}</b>!
+
+📱 <b>iPhone narxlash botiga xush kelibsiz!</b>
+
+🎁 <b>Bepul urinishlar:</b> {free_trials} ta
+💰 <b>Pullik balans:</b> {total_balance} ta
+
+📞 <b>Telefon raqamingizni yuboring:</b>
+<i>(Tugmani bosib yoki +998 XX XXX XX XX formatida yuboring)</i>"""
+
+        await UserState.waiting_phone.set()
+        await message.answer(
+            welcome_text,
+            reply_markup=phone_request_kb(),
+            parse_mode="HTML"
+        )
+        return
+
+    # ============================================================
+    # ⭐ 6. BOSH MENYU KO'RSATISH
+    # ============================================================
+    welcome_text = f"""👋 <b>Assalomu alaykum, {user.full_name}!</b>
+
+📱 <b>iPhone narxlash botiga xush kelibsiz!</b>
+
+💳 <b>Balanslaringiz:</b>
+🎁 Bepul: <b>{free_trials}</b> ta
+💰 Pullik: <b>{total_balance}</b> ta
+
+⬇️ <b>Quyidagi tugmalardan birini tanlang:</b>"""
+
+    await message.answer(
+        welcome_text,
+        reply_markup=main_menu(user.id in ADMINS),
+        parse_mode="HTML"
+    )
+
+
+# ================ OBUNA CALLBACK HANDLER (⭐ TO'LIQ TUZATILGAN) ================
+@dp.callback_query_handler(lambda c: c.data == "check_subscription", state="*")
+async def check_subscription_callback(call: types.CallbackQuery, state: FSMContext):
+    """
+    Obuna tekshirish callback - TO'LIQ TUZATILGAN
+    """
+    await call.answer("🔄 Tekshirilmoqda...")
+
+    user = call.from_user
+    is_subscribed = await check_subscription(user.id)
+
+    if is_subscribed:
+        # ✅ OBUNA BO'LGAN
+
+        # Obuna xabarini o'chirish
+        try:
+            await call.message.delete()
+        except Exception as e:
+            logger.warning(f"Failed to delete message: {e}")
+
+        # ============================================================
+        # ⭐ USER YARATISH (start handlerdan nusxalangan logic)
+        # ============================================================
+        try:
+            # API va Local parallel
+            api_task = api.create_user(
+                user.id,
+                user.full_name or f"User{user.id}",
+                user.username or ""
+            )
+
+            local_task = asyncio.to_thread(
+                create_user,
+                user.id,
+                user.full_name or f"User{user.id}",
+                user.username or "",
+                None
+            )
+
+            api_result, local_result = await asyncio.gather(
+                api_task,
+                local_task,
+                return_exceptions=True
+            )
+
+            # API xatosi
+            if isinstance(api_result, Exception):
+                logger.error(f"API error after subscription: {api_result}")
+                await call.message.answer(
+                    "❌ Server bilan aloqa yo'q. Iltimos /start bosing.",
+                    parse_mode="HTML"
+                )
+                return
+
+            # Ma'lumotlarni olish
+            phone = api_result.get('phone')
+            api_balance = int(api_result.get('balance', 0))
+
+            free_trials = 5
+            local_balance = 0
+
             try:
                 local_data = get_user_balance(user.id)
-                free_trials = local_data.get('free_trials_left', 5)
+                if local_data.get('success'):
+                    free_trials = int(local_data.get('free_trials_left', 5))
+                    local_balance = int(local_data.get('balance', 0))
             except:
                 pass
 
-    except Exception as e:
-        logger.error(f"Start error: {e}")
-        await message.answer("❌ Xatolik. Qaytadan /start")
-        return
+            total_balance = api_balance + local_balance
 
-    # 3. PHONE TEKSHIRISH
-    if not phone:
-        text = f"""👋 <b>{user.full_name}</b>!
+            # Phone sinxlash
+            if phone and not isinstance(local_result, Exception):
+                try:
+                    await asyncio.to_thread(update_phone_number, user.id, phone)
+                except:
+                    pass
 
-📱 <b>iPhone narxlash botiga xush kelibsiz!</b>
+        except Exception as e:
+            logger.error(f"Error after subscription check: {e}")
+            await call.message.answer(
+                "❌ Xatolik. Iltimos /start bosing.",
+                parse_mode="HTML"
+            )
+            return
 
-🎁 <b>Bepul:</b> {free_trials} ta
-💰 <b>Balans:</b> {balance} ta
+        # ============================================================
+        # ⭐ MUVAFFAQIYAT XABARI
+        # ============================================================
 
-⬇️ <b>Telefon raqamingizni yuboring:</b>"""
-        await UserState.waiting_phone.set()
-        await message.answer(text, reply_markup=phone_request_kb(), parse_mode="HTML")
-        return
+        # Telefon yo'q bo'lsa
+        if not phone:
+            success_text = f"""✅ <b>Obuna tasdiqlandi!</b>
 
-    # 4. BOSH MENYU
-    text = f"""👋 <b>{user.full_name}</b>!
+🎉 Endi botdan to'liq foydalanishingiz mumkin!
 
-📱 <b>iPhone narxlash botiga xush kelibsiz!</b>
+💳 <b>Balanslaringiz:</b>
+🎁 Bepul: <b>{free_trials}</b> ta
+💰 Pullik: <b>{total_balance}</b> ta
 
-🎁 <b>Bepul:</b> {free_trials} ta
-💰 <b>Balans:</b> {balance} ta
+📞 <b>Telefon raqamingizni yuboring:</b>
+<i>(Tugmani bosib yoki +998 XX XXX XX XX formatida)</i>"""
 
-<b>⬇️ Menyudan tanlang:</b>"""
-    await message.answer(text, reply_markup=main_menu(user.id in ADMINS), parse_mode="HTML")
+            await UserState.waiting_phone.set()
+            await call.message.answer(
+                success_text,
+                reply_markup=phone_request_kb(),
+                parse_mode="HTML"
+            )
+            return
 
+        # Telefon bor - bosh menyu
+        success_text = f"""✅ <b>Obuna tasdiqlandi!</b>
 
-# ⭐ OBUNA CALLBACK HANDLER
-@dp.callback_query_handler(lambda c: c.data == "check_subscription", state="*")
-async def check_subscription_callback(call: types.CallbackQuery, state: FSMContext):
-    """Obuna tekshirish callback"""
-    await call.answer("🔄 Tekshirilmoqda...")
+🎉 Endi botdan to'liq foydalanishingiz mumkin!
 
-    is_subscribed = await check_subscription(call.from_user.id)
+💳 <b>Balanslaringiz:</b>
+🎁 Bepul: <b>{free_trials}</b> ta
+💰 Pullik: <b>{total_balance}</b> ta
 
-    if is_subscribed:
-        try:
-            await call.message.delete()
-        except:
-            pass
+⬇️ <b>Quyidagi tugmalardan birini tanlang:</b>"""
 
         await call.message.answer(
-            "✅ <b>Obuna tasdiqlandi!</b>\n\n"
-            "🎉 Endi botdan to'liq foydalanishingiz mumkin!\n\n"
-            "📱 Qaytadan /start bosing:",
+            success_text,
+            reply_markup=main_menu(user.id in ADMINS),
             parse_mode="HTML"
         )
-        # /start ni qayta chaqirish
-        await start(call.message, state)
+
     else:
+        # ❌ HALI OBUNA EMAS
         await call.answer(
             "❌ Siz hali obuna bo'lmagansiz!\n\n"
             "📢 Kanalga obuna bo'lib, qaytadan tugmani bosing.",
