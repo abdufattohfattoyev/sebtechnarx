@@ -1,4 +1,4 @@
-# handlers/users/start.py - SUPER OPTIMIZED VERSION ⚡ (QISMLAR BILAN)
+# handlers/users/start.py - MAJBURIY OBUNA BILAN TO'LIQ VERSIYA ⚡
 
 import asyncio
 import logging
@@ -23,13 +23,22 @@ from keyboards.inline.payment_keyboards import (
     create_payment_inline_keyboard
 )
 from data.config import ADMINS
+
+# ⭐ MAJBURIY OBUNA IMPORT
+from .subscription import (
+    check_subscription,
+    subscription_keyboard,
+    SUBSCRIPTION_TEXT,
+    CHANNEL_USERNAME
+)
+
 from utils.api import api
 from utils.db_api.database import get_models, get_storages, get_colors, get_batteries, get_price
 from utils.db_api.user_database import (
     check_can_price,
     create_user,
     get_user_balance,
-    use_pricing as use_pricing_local
+    use_pricing as use_pricing_local, update_phone_number
 )
 
 # ================ CONSTANTS ================
@@ -152,6 +161,7 @@ def calculate_final_price(data: dict) -> str:
 
 def sort_models_naturally(models):
     """Modellarni tartibga solish"""
+
     def extract_info(name):
         lower = name.lower()
         if 'xs max' in lower: return (10.5, 2)
@@ -218,93 +228,299 @@ async def auto_check_payment(order_id: str, user_id: int, state: FSMContext):
         logger.error(f"Auto check error: {e}")
 
 
-# ================ START HANDLER ================
+# ================ START HANDLER (⭐ MAJBURIY OBUNA BILAN) ================
 @dp.message_handler(commands=['start'], state='*')
 async def start(message: types.Message, state: FSMContext):
-    """Start - OPTIMIZED (FIXED)"""
+    """
+    Start handler - MAJBURIY OBUNA BILAN (TO'LIQ TUZATILGAN)
+    """
     await state.finish()
     user = message.from_user
 
+    # ============================================================
+    # ⭐ 1. OBUNA TEKSHIRISH (Adminlar uchun yo'q)
+    # ============================================================
+    if user.id not in ADMINS:
+        is_subscribed = await check_subscription(user.id)
+
+        if not is_subscribed:
+            # Obuna yo'q - obuna xabarini yuborish
+            await message.answer(
+                SUBSCRIPTION_TEXT,
+                reply_markup=subscription_keyboard(),
+                parse_mode="HTML"
+            )
+            return  # ⚠️ To'xtatish - obuna bo'lmaguncha davom etmaydi
+
+    # ============================================================
+    # ⭐ 2. USER YARATISH/YANGILASH (API + LOCAL)
+    # ============================================================
     try:
+        # API dan user yaratish/olish
         api_task = api.create_user(
             user.id,
             user.full_name or f"User{user.id}",
             user.username or ""
         )
 
-        # local user yaratish (blocking bo'lishi mumkin, shuning uchun thread)
+        # Local database ga user yaratish/yangilash
         local_task = asyncio.to_thread(
             create_user,
             user.id,
             user.full_name or f"User{user.id}",
             user.username or "",
-            None
+            None  # phone_number
         )
 
-        api_result, local_result = await asyncio.gather(api_task, local_task, return_exceptions=True)
+        # Parallel bajarish
+        api_result, local_result = await asyncio.gather(
+            api_task,
+            local_task,
+            return_exceptions=True
+        )
 
+        # API xatosi
         if isinstance(api_result, Exception):
-            await message.answer("❌ Server xato. Qaytadan /start")
+            logger.error(f"API error in start: {api_result}")
+            await message.answer(
+                "❌ Server bilan aloqa yo'q. Iltimos qaytadan /start bosing.",
+                parse_mode="HTML"
+            )
             return
 
-        phone = api_result.get('phone')
-        balance = api_result.get('balance', 0)
+        # Local DB xatosi (lekin davom etamiz)
+        if isinstance(local_result, Exception):
+            logger.error(f"Local DB error in start: {local_result}")
 
-        # ✅ phone bo'lsa localga ham yozib qo'yamiz (MUHIM FIX)
-        if phone:
+        # ============================================================
+        # ⭐ 3. MA'LUMOTLARNI OLISH
+        # ============================================================
+
+        # API dan ma'lumotlar
+        phone = api_result.get('phone')
+        api_balance = int(api_result.get('balance', 0))
+
+        # Local dan bepul urinishlarni olish
+        free_trials = 5  # Default
+        local_balance = 0
+
+        try:
+            local_data = get_user_balance(user.id)
+            if local_data.get('success'):
+                free_trials = int(local_data.get('free_trials_left', 5))
+                local_balance = int(local_data.get('balance', 0))
+        except Exception as e:
+            logger.warning(f"Failed to get local balance: {e}")
+
+        # Balanslarni birlashtirish
+        total_balance = api_balance + local_balance
+
+        # ============================================================
+        # ⭐ 4. TELEFON RAQAMNI LOKAL BAZAGA SINXLASH
+        # ============================================================
+        if phone and not isinstance(local_result, Exception):
             try:
                 await asyncio.to_thread(
-                    __import__('utils.db_api.user_database', fromlist=['update_phone_number']).update_phone_number,
+                    update_phone_number,
                     user.id,
                     phone
                 )
+                logger.info(f"Phone synced for user {user.id}")
             except Exception as e:
-                logger.warning(f"Local phone sync failed: {e}")
+                logger.warning(f"Phone sync failed: {e}")
 
-        free_trials = 5
-        if not isinstance(local_result, Exception):
+    except Exception as e:
+        logger.error(f"Critical error in start handler: {e}", exc_info=True)
+        await message.answer(
+            "❌ Xatolik yuz berdi. Iltimos qaytadan /start bosing.",
+            parse_mode="HTML"
+        )
+        return
+
+    # ============================================================
+    # ⭐ 5. TELEFON RAQAM TEKSHIRISH
+    # ============================================================
+    if not phone:
+        # Telefon raqam yo'q - so'rash
+        welcome_text = f"""👋 <b>{user.full_name}</b>!
+
+📱 <b>iPhone narxlash botiga xush kelibsiz!</b>
+
+🎁 <b>Bepul urinishlar:</b> {free_trials} ta
+💰 <b>Pullik balans:</b> {total_balance} ta
+
+📞 <b>Telefon raqamingizni yuboring:</b>
+<i>(Tugmani bosib yoki +998 XX XXX XX XX formatida yuboring)</i>"""
+
+        await UserState.waiting_phone.set()
+        await message.answer(
+            welcome_text,
+            reply_markup=phone_request_kb(),
+            parse_mode="HTML"
+        )
+        return
+
+    # ============================================================
+    # ⭐ 6. BOSH MENYU KO'RSATISH
+    # ============================================================
+    welcome_text = f"""👋 <b>Assalomu alaykum, {user.full_name}!</b>
+
+📱 <b>iPhone narxlash botiga xush kelibsiz!</b>
+
+💳 <b>Balanslaringiz:</b>
+🎁 Bepul: <b>{free_trials}</b> ta
+💰 Pullik: <b>{total_balance}</b> ta
+
+⬇️ <b>Quyidagi tugmalardan birini tanlang:</b>"""
+
+    await message.answer(
+        welcome_text,
+        reply_markup=main_menu(user.id in ADMINS),
+        parse_mode="HTML"
+    )
+
+
+# ================ OBUNA CALLBACK HANDLER (⭐ TO'LIQ TUZATILGAN) ================
+@dp.callback_query_handler(lambda c: c.data == "check_subscription", state="*")
+async def check_subscription_callback(call: types.CallbackQuery, state: FSMContext):
+    """
+    Obuna tekshirish callback - TO'LIQ TUZATILGAN
+    """
+    await call.answer("🔄 Tekshirilmoqda...")
+
+    user = call.from_user
+    is_subscribed = await check_subscription(user.id)
+
+    if is_subscribed:
+        # ✅ OBUNA BO'LGAN
+
+        # Obuna xabarini o'chirish
+        try:
+            await call.message.delete()
+        except Exception as e:
+            logger.warning(f"Failed to delete message: {e}")
+
+        # ============================================================
+        # ⭐ USER YARATISH (start handlerdan nusxalangan logic)
+        # ============================================================
+        try:
+            # API va Local parallel
+            api_task = api.create_user(
+                user.id,
+                user.full_name or f"User{user.id}",
+                user.username or ""
+            )
+
+            local_task = asyncio.to_thread(
+                create_user,
+                user.id,
+                user.full_name or f"User{user.id}",
+                user.username or "",
+                None
+            )
+
+            api_result, local_result = await asyncio.gather(
+                api_task,
+                local_task,
+                return_exceptions=True
+            )
+
+            # API xatosi
+            if isinstance(api_result, Exception):
+                logger.error(f"API error after subscription: {api_result}")
+                await call.message.answer(
+                    "❌ Server bilan aloqa yo'q. Iltimos /start bosing.",
+                    parse_mode="HTML"
+                )
+                return
+
+            # Ma'lumotlarni olish
+            phone = api_result.get('phone')
+            api_balance = int(api_result.get('balance', 0))
+
+            free_trials = 5
+            local_balance = 0
+
             try:
                 local_data = get_user_balance(user.id)
-                free_trials = local_data.get('free_trials_left', 5)
+                if local_data.get('success'):
+                    free_trials = int(local_data.get('free_trials_left', 5))
+                    local_balance = int(local_data.get('balance', 0))
             except:
                 pass
 
-    except Exception as e:
-        logger.error(f"Start error: {e}")
-        await message.answer("❌ Xatolik. Qaytadan /start")
-        return
+            total_balance = api_balance + local_balance
 
-    # phone yo'q bo'lsa raqam so'raydi
-    if not phone:
-        text = f"""👋 <b>{user.full_name}</b>!
+            # Phone sinxlash
+            if phone and not isinstance(local_result, Exception):
+                try:
+                    await asyncio.to_thread(update_phone_number, user.id, phone)
+                except:
+                    pass
 
-📱 <b>iPhone narxlash botiga xush kelibsiz!</b>
+        except Exception as e:
+            logger.error(f"Error after subscription check: {e}")
+            await call.message.answer(
+                "❌ Xatolik. Iltimos /start bosing.",
+                parse_mode="HTML"
+            )
+            return
 
-🎁 <b>Bepul:</b> {free_trials} ta
-💰 <b>Balans:</b> {balance} ta
+        # ============================================================
+        # ⭐ MUVAFFAQIYAT XABARI
+        # ============================================================
 
-⬇️ <b>Telefon raqamingizni yuboring:</b>"""
-        await UserState.waiting_phone.set()
-        await message.answer(text, reply_markup=phone_request_kb(), parse_mode="HTML")
-        return
+        # Telefon yo'q bo'lsa
+        if not phone:
+            success_text = f"""✅ <b>Obuna tasdiqlandi!</b>
 
-    # phone bor bo'lsa menyu
-    text = f"""👋 <b>{user.full_name}</b>!
+🎉 Endi botdan to'liq foydalanishingiz mumkin!
 
-📱 <b>iPhone narxlash botiga xush kelibsiz!</b>
+💳 <b>Balanslaringiz:</b>
+🎁 Bepul: <b>{free_trials}</b> ta
+💰 Pullik: <b>{total_balance}</b> ta
 
-🎁 <b>Bepul:</b> {free_trials} ta
-💰 <b>Balans:</b> {balance} ta
+📞 <b>Telefon raqamingizni yuboring:</b>
+<i>(Tugmani bosib yoki +998 XX XXX XX XX formatida)</i>"""
 
-<b>⬇️ Menyudan tanlang:</b>"""
-    await message.answer(text, reply_markup=main_menu(user.id in ADMINS), parse_mode="HTML")
+            await UserState.waiting_phone.set()
+            await call.message.answer(
+                success_text,
+                reply_markup=phone_request_kb(),
+                parse_mode="HTML"
+            )
+            return
 
+        # Telefon bor - bosh menyu
+        success_text = f"""✅ <b>Obuna tasdiqlandi!</b>
+
+🎉 Endi botdan to'liq foydalanishingiz mumkin!
+
+💳 <b>Balanslaringiz:</b>
+🎁 Bepul: <b>{free_trials}</b> ta
+💰 Pullik: <b>{total_balance}</b> ta
+
+⬇️ <b>Quyidagi tugmalardan birini tanlang:</b>"""
+
+        await call.message.answer(
+            success_text,
+            reply_markup=main_menu(user.id in ADMINS),
+            parse_mode="HTML"
+        )
+
+    else:
+        # ❌ HALI OBUNA EMAS
+        await call.answer(
+            "❌ Siz hali obuna bo'lmagansiz!\n\n"
+            "📢 Kanalga obuna bo'lib, qaytadan tugmani bosing.",
+            show_alert=True
+        )
 
 
 # ================ PHONE HANDLER ================
 @dp.message_handler(content_types=['contact'], state=UserState.waiting_phone)
 async def receive_phone(message: types.Message, state: FSMContext):
-    """Telefon qabul qilish - OPTIMIZED"""
+    """Telefon qabul qilish"""
     if message.contact.user_id != message.from_user.id:
         await message.answer("❌ O'Z telefon raqamingizni yuboring!", reply_markup=phone_request_kb())
         return
@@ -582,12 +798,21 @@ async def cancel_payment_callback(callback: types.CallbackQuery, state: FSMConte
     await callback.message.answer("🏠 Bosh menyu", reply_markup=main_menu(callback.from_user.id in ADMINS))
 
 
-# ================ PRICING HANDLERS ================
+# ================ PRICING HANDLERS (⭐ MAJBURIY OBUNA BILAN) ================
 @dp.message_handler(lambda m: m.text in ["📱 Telefon narxlash", "🔄 Yana hisoblash"], state='*')
 async def choose_model(message: types.Message, state: FSMContext):
-    """Model tanlash - OPTIMIZED"""
+    """Model tanlash - MAJBURIY OBUNA BILAN"""
     await state.finish()
     user_id = message.from_user.id
+
+    # ⭐ OBUNA TEKSHIRISH (Adminlar uchun yo'q)
+    if user_id not in ADMINS:
+        is_subscribed = await check_subscription(user_id)
+
+        if not is_subscribed:
+            text = SUBSCRIPTION_TEXT.format(channel=CHANNEL_USERNAME)
+            await message.answer(text, reply_markup=subscription_keyboard(), parse_mode="HTML")
+            return
 
     local_check = check_can_price(user_id)
 
@@ -646,7 +871,7 @@ async def choose_model(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=UserState.waiting_model)
 async def model_selected(message: types.Message, state: FSMContext):
-    """Model tanlandi - OPTIMIZED"""
+    """Model tanlandi"""
     if message.text in ["◀️ Orqaga", "🏠 Bosh menyu"]:
         await state.finish()
         await message.answer("🏠 Bosh menyu", reply_markup=main_menu(message.from_user.id in ADMINS))
@@ -686,7 +911,7 @@ async def model_selected(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=UserState.waiting_storage)
 async def storage_selected(message: types.Message, state: FSMContext):
-    """Xotira tanlandi - OPTIMIZED"""
+    """Xotira tanlandi"""
     data = await state.get_data()
 
     if 'model_id' not in data:
@@ -727,7 +952,7 @@ async def storage_selected(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=UserState.waiting_color)
 async def color_selected(message: types.Message, state: FSMContext):
-    """Rang tanlandi - OPTIMIZED"""
+    """Rang tanlandi"""
     data = await state.get_data()
 
     if 'model_id' not in data:
@@ -760,7 +985,7 @@ async def color_selected(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=UserState.waiting_battery)
 async def battery_selected(message: types.Message, state: FSMContext):
-    """Batareya tanlandi - OPTIMIZED"""
+    """Batareya tanlandi"""
     if message.text in ["◀️ Orqaga", "🏠 Bosh menyu"]:
         if message.text == "🏠 Bosh menyu":
             await state.finish()
@@ -803,7 +1028,7 @@ async def battery_selected(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=UserState.waiting_sim)
 async def sim_selected(message: types.Message, state: FSMContext):
-    """SIM tanlandi - OPTIMIZED"""
+    """SIM tanlandi"""
     if message.text in ["◀️ Orqaga", "🏠 Bosh menyu"]:
         if message.text == "🏠 Bosh menyu":
             await state.finish()
@@ -830,7 +1055,7 @@ async def sim_selected(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=UserState.waiting_box)
 async def box_selected(message: types.Message, state: FSMContext):
-    """Quti tanlandi - ALMASHGAN QISMLAR BILAN"""
+    """Quti tanlandi"""
     if message.text in ["◀️ Orqaga", "🏠 Bosh menyu"]:
         if message.text == "🏠 Bosh menyu":
             await state.finish()
@@ -873,7 +1098,6 @@ async def box_selected(message: types.Message, state: FSMContext):
     has_box = "Bor" if message.text == "✅ Bor" else "Yo'q"
     await state.update_data(has_box=has_box)
 
-    # ⚡ QISMLAR SO'ROVI
     await message.answer(
         "<b>🔧 Telefonning qismlari almashganmi?</b>",
         reply_markup=parts_choice_kb(),
@@ -885,7 +1109,7 @@ async def box_selected(message: types.Message, state: FSMContext):
 # ================ QISMLAR TANLOVI ================
 @dp.message_handler(state=UserState.waiting_parts_choice)
 async def parts_choice_selected(message: types.Message, state: FSMContext):
-    """Qismlar tanlovi - OPTIMIZED"""
+    """Qismlar tanlovi"""
     if message.text in ["◀️ Orqaga", "🏠 Bosh menyu"]:
         if message.text == "🏠 Bosh menyu":
             await state.finish()
@@ -899,13 +1123,11 @@ async def parts_choice_selected(message: types.Message, state: FSMContext):
             await UserState.waiting_box.set()
         return
 
-    # Yo'q bo'lsa - to'g'ridan to'g'ri yakuniy narx
     if message.text == "❌ Yo'q":
         await state.update_data(selected_parts=[], damage_display="Yangi")
         await show_final_price(message, state)
         return
 
-    # Ha bo'lsa - inline qismlar
     if message.text == "✅ Ha":
         await state.update_data(selected_parts=[])
         markup = create_parts_inline_kb([], PARTS)
@@ -929,11 +1151,10 @@ async def parts_choice_selected(message: types.Message, state: FSMContext):
 # ================ QISMLAR - INLINE ================
 @dp.callback_query_handler(state=UserState.waiting_parts)
 async def parts_callback(call: types.CallbackQuery, state: FSMContext):
-    """Qismlar - OPTIMIZED"""
+    """Qismlar"""
     data = await state.get_data()
     selected = data.get('selected_parts', [])
 
-    # Tugallash
     if call.data == "part_done":
         if not selected:
             await call.answer("❌ Hech narsa tanlanmadi!", show_alert=True)
@@ -951,17 +1172,14 @@ async def parts_callback(call: types.CallbackQuery, state: FSMContext):
         await call.answer()
         return
 
-    # Qism tanlash
     part_key = call.data.replace("part_", "")
 
-    # Ekran va Oyna birga emas
     if part_key in ("screen", "glass"):
         other = "glass" if part_key == "screen" else "screen"
         if other in selected:
             await call.answer("❌ Ekran va Oyna birga bo'lmaydi!", show_alert=True)
             return
 
-    # Qo'shish/olib tashlash
     if part_key in selected:
         selected.remove(part_key)
     else:
@@ -984,12 +1202,10 @@ async def parts_callback(call: types.CallbackQuery, state: FSMContext):
 
 
 # ================ FINAL PRICE - CALLBACK ================
-# ================ FINAL PRICE - CALLBACK (TO'G'RILANGAN) ================
 async def show_final_price_from_callback(call: types.CallbackQuery, state: FSMContext):
-    """Yakuniy narx - CALLBACK - OPTIMIZED & SAFE"""
+    """Yakuniy narx - CALLBACK"""
     data = await state.get_data()
 
-    # ⚡ CRITICAL: Barcha zarur ma'lumotlarni tekshirish
     required_fields = ['model_name', 'model_id', 'storage']
     for field in required_fields:
         if field not in data:
@@ -1000,7 +1216,6 @@ async def show_final_price_from_callback(call: types.CallbackQuery, state: FSMCo
             await state.finish()
             return
 
-    # Default qiymatlar
     selected = data.get('selected_parts', [])
     color = data.get('color', 'Standart')
     battery = data.get('battery', '100%')
@@ -1010,7 +1225,6 @@ async def show_final_price_from_callback(call: types.CallbackQuery, state: FSMCo
     damage_display = "Yangi" if not selected else data.get('damage_display',
                                                            " + ".join([PARTS[k] for k in sorted(selected)]))
 
-    # Safe data dict yaratish
     safe_data = {
         'model_id': data['model_id'],
         'model_name': data['model_name'],
@@ -1025,7 +1239,6 @@ async def show_final_price_from_callback(call: types.CallbackQuery, state: FSMCo
     final_price = calculate_final_price(safe_data)
     phone_model = f"{data['model_name']} {data['storage']}"
 
-    # Price value
     if isinstance(final_price, str):
         price_str = final_price.replace(" $", "").replace("$", "").replace(" ", "").replace(",", "")
         try:
@@ -1037,14 +1250,12 @@ async def show_final_price_from_callback(call: types.CallbackQuery, state: FSMCo
 
     user_id = call.from_user.id
 
-    # Local check
     local_check = check_can_price(user_id)
     free_trials = int(local_check.get("free_trials_left", 0) or 0)
 
     is_free = False
     balance = 0
 
-    # Free trial
     if free_trials > 0:
         local_res = use_pricing_local(
             user_id, phone_model, data['storage'], color,
@@ -1065,7 +1276,6 @@ async def show_final_price_from_callback(call: types.CallbackQuery, state: FSMCo
         except:
             balance = 0
 
-    # Paid
     else:
         try:
             api_res = await api.use_pricing(user_id, phone_model, price_value)
@@ -1114,7 +1324,7 @@ async def show_final_price_from_callback(call: types.CallbackQuery, state: FSMCo
 
 # ================ FINAL PRICE - MESSAGE ================
 async def show_final_price(message: types.Message, state: FSMContext):
-    """Yakuniy narx - MESSAGE - OPTIMIZED"""
+    """Yakuniy narx - MESSAGE"""
     data = await state.get_data()
 
     model_name = data.get("model_name")

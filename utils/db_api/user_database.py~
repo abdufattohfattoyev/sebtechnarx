@@ -1,135 +1,201 @@
-# utils/db_api/user_database.py - BEPUL URINISHLAR BILAN TO'LIQ VERSIYA
-import sqlite3
+# utils/db_api/user_database.py - PostgreSQL TO'LIQ VERSIYA (0 DAN YOZILGAN)
+import psycopg2
+import psycopg2.extras
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
+from dotenv import load_dotenv
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-USER_DB_PATH = os.path.join(BASE_DIR, "data", "stats.db")
+# .env faylni yuklash
+load_dotenv()
+
+# Database konfiguratsiyasi
+DB_CONFIG = {
+    'dbname': os.getenv('DB_NAME', 'phones_db'),
+    'user': os.getenv('DB_USER', 'postgres'),
+    'password': os.getenv('DB_PASSWORD', '12345678'),
+    'host': os.getenv('DB_HOST', 'localhost'),
+    'port': os.getenv('DB_PORT', '5432')
+}
 
 
 def get_user_conn():
-    """User database ulanishini yaratish"""
-    os.makedirs(os.path.dirname(USER_DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(USER_DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    """PostgreSQL database ulanishini yaratish"""
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        return conn
+    except psycopg2.OperationalError as e:
+        print(f"❌ User database ga ulanishda xato: {e}")
+        raise
+    except Exception as e:
+        print(f"❌ Kutilmagan xato: {e}")
+        raise
 
 
 def init_user_db():
-    """User database yaratish"""
+    """User database yaratish - PostgreSQL"""
     conn = get_user_conn()
-    c = conn.cursor()
-
-    # USERS jadvali - 5 ta BEPUL URINISH bilan
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            telegram_id INTEGER UNIQUE NOT NULL,
-            phone_number TEXT,
-            full_name TEXT,
-            username TEXT,
-            free_trials_left INTEGER DEFAULT 5,
-            balance INTEGER DEFAULT 0,
-            total_pricings INTEGER DEFAULT 0,
-            is_active BOOLEAN DEFAULT 1,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-
-    # PRICING_HISTORY jadvali
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS pricing_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            telegram_id INTEGER NOT NULL,
-            phone_model TEXT NOT NULL,
-            storage TEXT,
-            color TEXT,
-            battery TEXT,
-            sim_type TEXT,
-            has_box TEXT,
-            damage TEXT,
-            price INTEGER,
-            is_free_trial BOOLEAN DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-        )
-    ''')
-
-    # PAYMENT_HISTORY jadvali
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS payment_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            telegram_id INTEGER NOT NULL,
-            order_id TEXT UNIQUE,
-            tariff_name TEXT,
-            amount REAL NOT NULL,
-            count INTEGER NOT NULL,
-            payment_status TEXT DEFAULT 'pending',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            completed_at TIMESTAMP,
-            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-        )
-    ''')
-
-    # Indekslar
-    c.execute('CREATE INDEX IF NOT EXISTS idx_users_telegram ON users(telegram_id)')
-    c.execute('CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone_number)')
-    c.execute('CREATE INDEX IF NOT EXISTS idx_pricing_user ON pricing_history(user_id)')
-    c.execute('CREATE INDEX IF NOT EXISTS idx_pricing_telegram ON pricing_history(telegram_id)')
-    c.execute('CREATE INDEX IF NOT EXISTS idx_payment_user ON payment_history(user_id)')
-    c.execute('CREATE INDEX IF NOT EXISTS idx_payment_order ON payment_history(order_id)')
-
-    conn.commit()
-    conn.close()
-    print("✅ stats.db yaratildi - 5 ta bepul urinish bilan!")
-
-
-# ============= USER FUNKSIYALARI =============
-
-def create_user(telegram_id, full_name, username=None, phone_number=None):
-    """
-    User yaratish - 5 TA BEPUL URINISH bilan
-    """
-    conn = get_user_conn()
-    c = conn.cursor()
+    cursor = conn.cursor()
 
     try:
-        # Avval user mavjudligini tekshirish
-        c.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,))
-        user = c.fetchone()
+        print("\n" + "=" * 60)
+        print("🚀 PostgreSQL User Database yaratilmoqda...")
+        print("=" * 60)
+
+        # ===================== USERS JADVALI =====================
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                telegram_id BIGINT UNIQUE NOT NULL,
+                phone_number VARCHAR(20),
+                full_name VARCHAR(255),
+                username VARCHAR(255),
+                free_trials_left INTEGER DEFAULT 5,
+                balance INTEGER DEFAULT 0,
+                total_pricings INTEGER DEFAULT 0,
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        print("✅ USERS jadvali yaratildi")
+
+        # ===================== PRICING_HISTORY JADVALI =====================
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS pricing_history (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                telegram_id BIGINT NOT NULL,
+                phone_model VARCHAR(255) NOT NULL,
+                storage VARCHAR(50),
+                color VARCHAR(100),
+                battery VARCHAR(50),
+                sim_type VARCHAR(50),
+                has_box VARCHAR(10),
+                damage VARCHAR(255),
+                price INTEGER,
+                is_free_trial BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        print("✅ PRICING_HISTORY jadvali yaratildi")
+
+        # ===================== PAYMENT_HISTORY JADVALI =====================
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS payment_history (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                telegram_id BIGINT NOT NULL,
+                order_id VARCHAR(255) UNIQUE,
+                tariff_name VARCHAR(100),
+                amount NUMERIC(10, 2) NOT NULL,
+                count INTEGER NOT NULL,
+                payment_status VARCHAR(50) DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMP
+            )
+        ''')
+        print("✅ PAYMENT_HISTORY jadvali yaratildi")
+
+        conn.commit()
+
+        # ===================== INDEKSLAR =====================
+        print("\n🔄 Indekslar yaratilmoqda...")
+
+        # USERS indekslari
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_telegram ON users(telegram_id)')
+        cursor.execute(
+            'CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone_number) WHERE phone_number IS NOT NULL')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_created ON users(created_at DESC)')
+        print("✅ USERS: 4 ta indeks")
+
+        # PRICING_HISTORY indekslari
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_pricing_user ON pricing_history(user_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_pricing_telegram ON pricing_history(telegram_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_pricing_created ON pricing_history(created_at DESC)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_pricing_free ON pricing_history(is_free_trial)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_pricing_model ON pricing_history(phone_model)')
+        print("✅ PRICING_HISTORY: 5 ta indeks")
+
+        # PAYMENT_HISTORY indekslari
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_payment_user ON payment_history(user_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_payment_order ON payment_history(order_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_payment_status ON payment_history(payment_status)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_payment_created ON payment_history(created_at DESC)')
+        print("✅ PAYMENT_HISTORY: 4 ta indeks")
+
+        conn.commit()
+
+        print("\n" + "=" * 60)
+        print("✅ PostgreSQL user database tayyor!")
+        print("✅ Jami 13 ta indeks yaratildi")
+        print("=" * 60 + "\n")
+
+        # VACUUM ANALYZE
+        try:
+            conn.autocommit = True
+            cursor.execute("ANALYZE users")
+            cursor.execute("ANALYZE pricing_history")
+            cursor.execute("ANALYZE payment_history")
+            print("✅ Database optimizatsiya qilindi!")
+        except Exception as e:
+            print(f"⚠️ VACUUM ANALYZE xato (kritik emas): {e}")
+        finally:
+            conn.autocommit = False
+
+    except Exception as e:
+        conn.rollback()
+        print(f"❌ Database yaratishda xato: {e}")
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ============================================================
+# USER BOSHQARUV FUNKSIYALARI
+# ============================================================
+
+def create_user(telegram_id, full_name, username=None, phone_number=None):
+    """User yaratish yoki yangilash - 5 TA BEPUL URINISH"""
+    conn = get_user_conn()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    try:
+        # Mavjud usermi tekshirish
+        cursor.execute("SELECT * FROM users WHERE telegram_id = %s", (telegram_id,))
+        user = cursor.fetchone()
 
         if user:
-            # User mavjud - faqat ma'lumotlarini yangilash
-            c.execute("""
+            # Mavjud user - faqat ma'lumotlarni yangilash
+            cursor.execute("""
                 UPDATE users 
-                SET full_name = ?, username = ?, updated_at = ?
-                WHERE telegram_id = ?
-            """, (full_name, username, datetime.now(), telegram_id))
+                SET full_name = %s, 
+                    username = %s, 
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE telegram_id = %s
+                RETURNING *
+            """, (full_name, username, telegram_id))
+            user = cursor.fetchone()
             conn.commit()
 
-            # Yangilangan userni qaytarish
-            c.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,))
-            user = c.fetchone()
             return {
                 'success': True,
                 'user': dict(user),
-                'is_new': False
+                'is_new': False,
+                'message': '✅ Xush kelibsiz!'
             }
         else:
-            # ✅ YANGI USER - 5 TA BEPUL URINISH bilan yaratish
-            c.execute("""
+            # YANGI user yaratish
+            cursor.execute("""
                 INSERT INTO users 
-                (telegram_id, full_name, username, phone_number, free_trials_left, balance, total_pricings)
-                VALUES (?, ?, ?, ?, 5, 0, 0)
+                (telegram_id, full_name, username, phone_number, free_trials_left, balance, total_pricings, is_active)
+                VALUES (%s, %s, %s, %s, 5, 0, 0, TRUE)
+                RETURNING *
             """, (telegram_id, full_name, username, phone_number))
+            user = cursor.fetchone()
             conn.commit()
 
-            # Yangi userni qaytarish
-            c.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,))
-            user = c.fetchone()
             return {
                 'success': True,
                 'user': dict(user),
@@ -137,540 +203,595 @@ def create_user(telegram_id, full_name, username=None, phone_number=None):
                 'message': '🎁 Sizga 5 ta bepul urinish berildi!'
             }
 
+    except psycopg2.IntegrityError:
+        conn.rollback()
+        # Race condition - qayta tekshirish
+        try:
+            cursor.execute("SELECT * FROM users WHERE telegram_id = %s", (telegram_id,))
+            user = cursor.fetchone()
+            if user:
+                return {
+                    'success': True,
+                    'user': dict(user),
+                    'is_new': False,
+                    'message': '✅ Xush kelibsiz!'
+                }
+        except:
+            pass
+
+        return {'success': False, 'error': 'Database xatosi'}
     except Exception as e:
+        conn.rollback()
         print(f"❌ User yaratishda xato: {e}")
-        return {
-            'success': False,
-            'error': str(e)
-        }
+        return {'success': False, 'error': str(e)}
     finally:
+        cursor.close()
         conn.close()
 
 
 def get_user(telegram_id):
     """User ma'lumotlarini olish"""
     conn = get_user_conn()
-    c = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
-        c.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,))
-        user = c.fetchone()
+        cursor.execute("SELECT * FROM users WHERE telegram_id = %s", (telegram_id,))
+        user = cursor.fetchone()
 
         if user:
-            return {
-                'success': True,
-                'user': dict(user)
-            }
+            return {'success': True, 'user': dict(user)}
         else:
-            return {
-                'success': False,
-                'error': 'User topilmadi'
-            }
+            return {'success': False, 'error': 'User topilmadi'}
     except Exception as e:
         print(f"❌ User olishda xato: {e}")
-        return {
-            'success': False,
-            'error': str(e)
-        }
+        return {'success': False, 'error': str(e)}
     finally:
+        cursor.close()
         conn.close()
 
 
 def update_phone_number(telegram_id, phone_number):
     """Telefon raqamini yangilash"""
     conn = get_user_conn()
-    c = conn.cursor()
+    cursor = conn.cursor()
 
     try:
-        c.execute("""
+        cursor.execute("""
             UPDATE users 
-            SET phone_number = ?, updated_at = ?
-            WHERE telegram_id = ?
-        """, (phone_number, datetime.now(), telegram_id))
+            SET phone_number = %s, 
+                updated_at = CURRENT_TIMESTAMP
+            WHERE telegram_id = %s
+            RETURNING id
+        """, (phone_number, telegram_id))
+
+        result = cursor.fetchone()
         conn.commit()
 
-        return {
-            'success': True,
-            'message': '✅ Telefon raqami saqlandi'
-        }
+        if result:
+            return {'success': True, 'message': '✅ Telefon raqami saqlandi'}
+        else:
+            return {'success': False, 'error': 'User topilmadi'}
     except Exception as e:
+        conn.rollback()
         print(f"❌ Telefon raqamini yangilashda xato: {e}")
-        return {
-            'success': False,
-            'error': str(e)
-        }
+        return {'success': False, 'error': str(e)}
     finally:
+        cursor.close()
         conn.close()
 
 
-def check_can_price(telegram_id):
-    """
-    ✅ NARXLASH MUMKINLIGINI TEKSHIRISH (TO'G'RILANGAN)
+# ============================================================
+# NARXLASH FUNKSIYALARI
+# ============================================================
 
-    LOCAL faqat:
-      - telefon raqami bormi?
-      - free_trials_left bormi?
-    LOCAL paid balance ishlatilmaydi (paid API da!)
-    """
+def check_can_price(telegram_id):
+    """Narxlash imkoniyatini tekshirish"""
     conn = get_user_conn()
-    c = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
-        c.execute("""
-            SELECT free_trials_left, phone_number
+        cursor.execute("""
+            SELECT free_trials_left, phone_number, balance, is_active
             FROM users
-            WHERE telegram_id = ?
+            WHERE telegram_id = %s
         """, (telegram_id,))
-        user = c.fetchone()
+
+        user = cursor.fetchone()
 
         if not user:
             return {
                 'success': False,
-                'can_price': False,
-                'need_phone': False,
-                'free_trials_left': 0,
-                'message': 'User topilmadi'
+                'error': 'User topilmadi',
+                'can_price': False
             }
 
         free_trials = int(user['free_trials_left'] or 0)
-        phone_number = user['phone_number']
+        phone = user['phone_number']
+        balance = int(user['balance'] or 0)
+        is_active = user['is_active']
 
-        # 1️⃣ Telefon raqami tekshiruvi
-        if not phone_number:
+        if not is_active:
             return {
-                'success': True,
-                'can_price': False,
-                'need_phone': True,
-                'free_trials_left': free_trials,
-                'message': '📱 Iltimos, avval telefon raqamingizni kiriting'
+                'success': False,
+                'error': '❌ Hisobingiz faol emas',
+                'can_price': False
             }
 
-        # 2️⃣ LOCAL bepul urinishlar
-        if free_trials > 0:
+        if not phone:
+            return {
+                'success': False,
+                'error': '📱 Avval telefon raqamingizni kiriting',
+                'can_price': False,
+                'needs_phone': True
+            }
+
+        if free_trials > 0 or balance > 0:
             return {
                 'success': True,
                 'can_price': True,
-                'is_free': True,
                 'free_trials_left': free_trials,
-                'message': f'🎁 Bepul urinish: {free_trials} ta qoldi'
+                'balance': balance,
+                'phone_number': phone
+            }
+        else:
+            return {
+                'success': False,
+                'error': '💰 Balans yetarli emas',
+                'can_price': False,
+                'free_trials_left': 0,
+                'balance': 0,
+                'needs_payment': True
             }
 
-        # 3️⃣ free tugagan -> bu yerda "can_price" false qaytaramiz
-        # paid balansni API'dan tekshirasiz
-        return {
-            'success': True,
-            'can_price': False,
-            'is_free': False,
-            'free_trials_left': 0,
-            'message': 'LOCAL free urinish tugagan (paid balansni API dan tekshiring)'
-        }
-
     except Exception as e:
-        print(f"❌ Tekshirishda xato: {e}")
-        return {
-            'success': False,
-            'can_price': False,
-            'error': str(e)
-        }
+        print(f"❌ Narxlash tekshirishda xato: {e}")
+        return {'success': False, 'error': 'Tekshirishda xato', 'can_price': False}
     finally:
+        cursor.close()
         conn.close()
 
 
-def use_pricing(telegram_id, phone_model, storage='', color='', battery='', sim_type='', has_box='', damage='',
-                price=0):
-    """
-    ✅ NARXLASHDAN FOYDALANISH
-
-    Logika:
-    1. Bepul urinish bormi? - Ishlatamiz (free_trials_left - 1)
-    2. Yo'q bo'lsa, balansdan ishlatamiz (balance - 1)
-    """
+def use_pricing(telegram_id, phone_model, storage, color, battery, sim_type, has_box, damage, price):
+    """Narxlashni ishlatish - AVVAL BEPUL, KEYIN BALANS"""
     conn = get_user_conn()
-    c = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
-        # Avval tekshirish
-        check = check_can_price(telegram_id)
+        conn.autocommit = False
 
-        if not check.get('can_price'):
+        # User ni lock bilan olish
+        cursor.execute("""
+            SELECT id, free_trials_left, balance, phone_number, is_active
+            FROM users
+            WHERE telegram_id = %s
+            FOR UPDATE
+        """, (telegram_id,))
+
+        user = cursor.fetchone()
+
+        if not user:
+            conn.rollback()
+            return {'success': False, 'error': 'User topilmadi'}
+
+        user_id = user['id']
+        free_trials = int(user['free_trials_left'] or 0)
+        balance = int(user['balance'] or 0)
+        phone = user['phone_number']
+        is_active = user['is_active']
+
+        # Tekshirishlar
+        if not is_active:
+            conn.rollback()
+            return {'success': False, 'error': '❌ Hisobingiz faol emas'}
+
+        if not phone:
+            conn.rollback()
+            return {'success': False, 'error': '📱 Avval telefon raqamingizni kiriting'}
+
+        if free_trials <= 0 and balance <= 0:
+            conn.rollback()
             return {
                 'success': False,
-                'error': check.get('message', 'Narxlash mumkin emas')
+                'error': '💰 Balans yetarli emas',
+                'needs_payment': True
             }
 
-        # User ID olish
-        c.execute("SELECT id, free_trials_left, balance FROM users WHERE telegram_id = ?", (telegram_id,))
-        user = c.fetchone()
-        user_id = user['id']
-        free_trials = user['free_trials_left']
-        balance = user['balance']
+        # Narxlash turini aniqlash
+        is_free_trial = free_trials > 0
 
-        is_free = False
-
-        # ✅ BEPUL URINISHDAN FOYDALANISH
-        if free_trials > 0:
-            c.execute("""
+        if is_free_trial:
+            # Bepul urinishdan
+            cursor.execute("""
                 UPDATE users 
                 SET free_trials_left = free_trials_left - 1,
                     total_pricings = total_pricings + 1,
-                    updated_at = ?
-                WHERE telegram_id = ?
-            """, (datetime.now(), telegram_id))
-            is_free = True
-            new_free_trials = free_trials - 1
-            new_balance = balance
-            print(f"✅ Bepul urinish ishlatildi: {telegram_id}, qoldi: {new_free_trials}")
-
-        # ✅ BALANSDAN FOYDALANISH
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE telegram_id = %s
+                RETURNING free_trials_left, balance
+            """, (telegram_id,))
         else:
-            c.execute("""
+            # Balansdan
+            cursor.execute("""
                 UPDATE users 
                 SET balance = balance - 1,
                     total_pricings = total_pricings + 1,
-                    updated_at = ?
-                WHERE telegram_id = ?
-            """, (datetime.now(), telegram_id))
-            is_free = False
-            new_free_trials = 0
-            new_balance = balance - 1
-            print(f"✅ Balansdan ishlatildi: {telegram_id}, qoldi: {new_balance}")
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE telegram_id = %s
+                RETURNING free_trials_left, balance
+            """, (telegram_id,))
 
-        # Tarixga qo'shish
-        c.execute("""
+        updated = cursor.fetchone()
+
+        # Tarixga yozish
+        cursor.execute("""
             INSERT INTO pricing_history 
             (user_id, telegram_id, phone_model, storage, color, battery, sim_type, has_box, damage, price, is_free_trial)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (user_id, telegram_id, phone_model, storage, color, battery, sim_type, has_box, damage, price, is_free))
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+        user_id, telegram_id, phone_model, storage, color, battery, sim_type, has_box, damage, price, is_free_trial))
 
         conn.commit()
 
         return {
             'success': True,
-            'is_free': is_free,
-            'free_trials_left': new_free_trials,
-            'balance': new_balance,
-            'message': '✅ Narxlash muvaffaqiyatli!'
+            'free_trials_left': int(updated['free_trials_left']),
+            'balance': int(updated['balance']),
+            'is_free_trial': is_free_trial,
+            'message': '✅ Narx ko\'rildi' + (' (bepul)' if is_free_trial else ' (balansdan)')
         }
 
     except Exception as e:
-        print(f"❌ Narxlashda xato: {e}")
         conn.rollback()
-        return {
-            'success': False,
-            'error': str(e)
-        }
+        print(f"❌ Narxlashda xato: {e}")
+        return {'success': False, 'error': 'Xatolik yuz berdi'}
     finally:
+        cursor.close()
         conn.close()
 
 
+# ============================================================
+# BALANS BOSHQARUVI
+# ============================================================
+
 def get_user_balance(telegram_id):
-    """User balansini olish - BEPUL URINISHLAR bilan"""
+    """User balansini olish"""
     conn = get_user_conn()
-    c = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
-        c.execute("""
-            SELECT 
-                balance, 
-                free_trials_left, 
-                total_pricings, 
-                full_name, 
-                phone_number 
-            FROM users 
-            WHERE telegram_id = ?
+        cursor.execute("""
+            SELECT balance, free_trials_left, total_pricings
+            FROM users
+            WHERE telegram_id = %s
         """, (telegram_id,))
-        user = c.fetchone()
+
+        user = cursor.fetchone()
 
         if user:
             return {
                 'success': True,
-                'balance': user['balance'],
-                'free_trials_left': user['free_trials_left'],
-                'total_pricings': user['total_pricings'],
-                'full_name': user['full_name'],
-                'phone_number': user['phone_number']
+                'balance': int(user['balance'] or 0),
+                'free_trials_left': int(user['free_trials_left'] or 0),
+                'total_pricings': int(user['total_pricings'] or 0)
             }
         else:
             return {
                 'success': False,
-                'error': 'User topilmadi'
+                'error': 'User topilmadi',
+                'balance': 0,
+                'free_trials_left': 0
             }
     except Exception as e:
         print(f"❌ Balans olishda xato: {e}")
-        return {
-            'success': False,
-            'error': str(e)
-        }
+        return {'success': False, 'error': str(e), 'balance': 0, 'free_trials_left': 0}
     finally:
+        cursor.close()
         conn.close()
 
 
-def get_balance(telegram_id):
-    """Alias for get_user_balance"""
-    return get_user_balance(telegram_id)
-
-
-def add_balance(telegram_id, count, order_id='', tariff_name='', amount=0):
-    """Balansga narxlashlar qo'shish (to'lovdan keyin)"""
+def add_balance(telegram_id, count):
+    """Balans qo'shish"""
     conn = get_user_conn()
-    c = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
-        # User ID olish
-        c.execute("SELECT id FROM users WHERE telegram_id = ?", (telegram_id,))
-        user = c.fetchone()
+        conn.autocommit = False
 
-        if not user:
-            return {
-                'success': False,
-                'error': 'User topilmadi'
-            }
-
-        user_id = user['id']
-
-        # Balansni oshirish
-        c.execute("""
+        cursor.execute("""
             UPDATE users 
-            SET balance = balance + ?,
-                updated_at = ?
-            WHERE telegram_id = ?
-        """, (count, datetime.now(), telegram_id))
+            SET balance = balance + %s, 
+                updated_at = CURRENT_TIMESTAMP
+            WHERE telegram_id = %s
+            RETURNING balance, free_trials_left
+        """, (count, telegram_id))
 
-        # To'lov tarixiga qo'shish
-        c.execute("""
-            INSERT INTO payment_history 
-            (user_id, telegram_id, order_id, tariff_name, amount, count, payment_status, completed_at)
-            VALUES (?, ?, ?, ?, ?, ?, 'completed', ?)
-        """, (user_id, telegram_id, order_id, tariff_name, amount, count, datetime.now()))
+        user = cursor.fetchone()
 
-        conn.commit()
-
-        # Yangi balansni olish
-        c.execute("SELECT balance, free_trials_left FROM users WHERE telegram_id = ?", (telegram_id,))
-        result = c.fetchone()
-        new_balance = result['balance']
-        free_trials = result['free_trials_left']
-
-        return {
-            'success': True,
-            'balance': new_balance,
-            'free_trials_left': free_trials,
-            'added': count,
-            'message': f'Balans to\'ldirildi: +{count} ta'
-        }
+        if user:
+            conn.commit()
+            return {
+                'success': True,
+                'balance': int(user['balance']),
+                'free_trials_left': int(user['free_trials_left']),
+                'message': f'✅ {count} ta narxlash qo\'shildi'
+            }
+        else:
+            conn.rollback()
+            return {'success': False, 'error': 'User topilmadi'}
 
     except Exception as e:
-        print(f"❌ Balans qo'shishda xato: {e}")
         conn.rollback()
-        return {
-            'success': False,
-            'error': str(e)
-        }
+        print(f"❌ Balans qo'shishda xato: {e}")
+        return {'success': False, 'error': str(e)}
     finally:
+        cursor.close()
         conn.close()
 
 
-def get_user_stats(telegram_id):
-    """User statistikasi - BEPUL URINISHLAR bilan"""
+# ============================================================
+# TO'LOV FUNKSIYALARI
+# ============================================================
+
+def add_payment_record(telegram_id, order_id, tariff_name, amount, count):
+    """To'lov yozuvini qo'shish"""
     conn = get_user_conn()
-    c = conn.cursor()
+    cursor = conn.cursor()
 
     try:
-        # User ma'lumotlari
-        c.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,))
-        user = c.fetchone()
+        cursor.execute("SELECT id FROM users WHERE telegram_id = %s", (telegram_id,))
+        user = cursor.fetchone()
 
         if not user:
-            return {
-                'success': False,
-                'error': 'User topilmadi'
-            }
+            return {'success': False, 'error': 'User topilmadi'}
 
-        user_id = user['id']
+        user_id = user[0]
 
-        # Narxlashlar soni
-        c.execute("SELECT COUNT(*) as total FROM pricing_history WHERE user_id = ?", (user_id,))
-        total_pricings = c.fetchone()['total']
+        cursor.execute("""
+            INSERT INTO payment_history 
+            (user_id, telegram_id, order_id, tariff_name, amount, count, payment_status)
+            VALUES (%s, %s, %s, %s, %s, %s, 'pending')
+        """, (user_id, telegram_id, order_id, tariff_name, amount, count))
 
-        # Bepul narxlashlar
-        c.execute("SELECT COUNT(*) as free FROM pricing_history WHERE user_id = ? AND is_free_trial = 1", (user_id,))
-        free_pricings = c.fetchone()['free']
-
-        # Pullik narxlashlar
-        c.execute("SELECT COUNT(*) as paid FROM pricing_history WHERE user_id = ? AND is_free_trial = 0", (user_id,))
-        paid_pricings = c.fetchone()['paid']
-
-        # To'lovlar soni
-        c.execute("SELECT COUNT(*) as payments FROM payment_history WHERE user_id = ?", (user_id,))
-        total_payments = c.fetchone()['payments']
-
-        # Jami to'langan summa
-        c.execute("SELECT SUM(amount) as total FROM payment_history WHERE user_id = ? AND payment_status = 'completed'",
-                  (user_id,))
-        total_paid_amount = c.fetchone()['total'] or 0
-
-        return {
-            'success': True,
-            'user': dict(user),
-            'stats': {
-                'total_pricings': total_pricings,
-                'free_pricings': free_pricings,
-                'paid_pricings': paid_pricings,
-                'total_payments': total_payments,
-                'total_paid_amount': total_paid_amount,
-                'free_trials_left': user['free_trials_left'],
-                'balance': user['balance']
-            }
-        }
-
-    except Exception as e:
-        print(f"❌ Statistika olishda xato: {e}")
-        return {
-            'success': False,
-            'error': str(e)
-        }
-    finally:
-        conn.close()
-
-
-# ============= ADMIN FUNKSIYALARI =============
-
-def admin_add_balance(telegram_id, count):
-    """Admin tomonidan balans qo'shish"""
-    conn = get_user_conn()
-    c = conn.cursor()
-
-    try:
-        c.execute("""
-            UPDATE users 
-            SET balance = balance + ?,
-                updated_at = ?
-            WHERE telegram_id = ?
-        """, (count, datetime.now(), telegram_id))
         conn.commit()
-
-        c.execute("SELECT balance, free_trials_left FROM users WHERE telegram_id = ?", (telegram_id,))
-        result = c.fetchone()
-
-        return {
-            'success': True,
-            'balance': result['balance'],
-            'free_trials_left': result['free_trials_left'],
-            'message': f'Admin: +{count} ta qo\'shildi'
-        }
+        return {'success': True, 'message': '✅ To\'lov yozuvi yaratildi'}
+    except psycopg2.IntegrityError:
+        conn.rollback()
+        return {'success': False, 'error': 'Bu order_id allaqachon mavjud'}
     except Exception as e:
-        print(f"❌ Admin balans qo'shishda xato: {e}")
-        return {
-            'success': False,
-            'error': str(e)
-        }
+        conn.rollback()
+        print(f"❌ To'lov yozuvini qo'shishda xato: {e}")
+        return {'success': False, 'error': str(e)}
     finally:
+        cursor.close()
         conn.close()
 
 
-def admin_reset_free_trials(telegram_id, count=5):
-    """Admin tomonidan bepul urinishlarni qayta tiklash"""
+def complete_payment(order_id, count):
+    """To'lovni yakunlash"""
     conn = get_user_conn()
-    c = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
-        c.execute("""
+        conn.autocommit = False
+
+        cursor.execute("""
+            SELECT user_id, telegram_id, count, payment_status
+            FROM payment_history 
+            WHERE order_id = %s
+            FOR UPDATE
+        """, (order_id,))
+
+        payment = cursor.fetchone()
+
+        if not payment:
+            conn.rollback()
+            return {'success': False, 'error': 'To\'lov topilmadi'}
+
+        if payment['payment_status'] == 'completed':
+            conn.rollback()
+            return {'success': False, 'error': 'To\'lov allaqachon bajarilgan'}
+
+        # Balansni yangilash
+        cursor.execute("""
             UPDATE users 
-            SET free_trials_left = ?,
-                updated_at = ?
-            WHERE telegram_id = ?
-        """, (count, datetime.now(), telegram_id))
+            SET balance = balance + %s, 
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            RETURNING balance, free_trials_left
+        """, (count, payment['user_id']))
+
+        user = cursor.fetchone()
+
+        # To'lovni yakunlash
+        cursor.execute("""
+            UPDATE payment_history 
+            SET payment_status = 'completed', 
+                completed_at = CURRENT_TIMESTAMP
+            WHERE order_id = %s
+        """, (order_id,))
+
         conn.commit()
 
         return {
             'success': True,
-            'message': f'🎁 Bepul urinishlar qayta tiklandi: {count} ta'
+            'balance': int(user['balance']),
+            'free_trials_left': int(user['free_trials_left']),
+            'message': f'✅ {count} ta narxlash qo\'shildi'
         }
+
     except Exception as e:
-        print(f"❌ Bepul urinishlarni tiklashda xato: {e}")
-        return {
-            'success': False,
-            'error': str(e)
-        }
+        conn.rollback()
+        print(f"❌ To'lovni yakunlashda xato: {e}")
+        return {'success': False, 'error': str(e)}
     finally:
+        cursor.close()
         conn.close()
 
 
-# ============= STATISTIKA FUNKSIYALARI =============
+# ============================================================
+# TARIX FUNKSIYALARI
+# ============================================================
 
-def get_total_users():
-    """Jami userlar soni"""
+def get_user_history(telegram_id, limit=10):
+    """User tarixini olish"""
     conn = get_user_conn()
-    c = conn.cursor()
-    try:
-        c.execute("SELECT COUNT(*) as total FROM users")
-        return c.fetchone()['total']
-    except:
-        return 0
-    finally:
-        conn.close()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-
-def get_registered_users_count():
-    """
-    Ro'yxatdan o'tgan foydalanuvchilar soni
-    Returns: int
-    """
-    conn = get_user_conn()
-    c = conn.cursor()
     try:
-        c.execute("SELECT COUNT(*) as total FROM users")
-        result = c.fetchone()
-        return result['total'] if result else 0
+        cursor.execute("""
+            SELECT * FROM pricing_history
+            WHERE telegram_id = %s
+            ORDER BY created_at DESC
+            LIMIT %s
+        """, (telegram_id, limit))
+
+        rows = cursor.fetchall()
+        return {'success': True, 'history': [dict(row) for row in rows]}
     except Exception as e:
-        print(f"❌ Ro'yxatdan o'tganlar sonini olishda xato: {e}")
-        return 0
+        print(f"❌ Tarix olishda xato: {e}")
+        return {'success': False, 'error': str(e), 'history': []}
     finally:
+        cursor.close()
         conn.close()
 
 
-def get_all_users(limit=100):
-    """Barcha userlarni olish"""
+# ============================================================
+# STATISTIKA FUNKSIYALARI ⭐ YANGI!
+# ============================================================
+
+def get_users_statistics():
+    """FOYDALANUVCHILAR STATISTIKASI - Kunlik, Oylik, Jami, Aktiv"""
     conn = get_user_conn()
-    c = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
     try:
-        c.execute("""
-            SELECT * FROM users 
-            ORDER BY created_at DESC 
-            LIMIT ?
-        """, (limit,))
-        users = c.fetchall()
+        stats = {}
+
+        # ========== 1. JAMI FOYDALANUVCHILAR ==========
+        cursor.execute("SELECT COUNT(*) as count FROM users")
+        stats['total_users'] = cursor.fetchone()['count'] or 0
+
+        # ========== 2. JAMI AKTIV FOYDALANUVCHILAR ==========
+        cursor.execute("SELECT COUNT(*) as count FROM users WHERE is_active = TRUE")
+        stats['total_active_users'] = cursor.fetchone()['count'] or 0
+
+        # ========== 3. JAMI AKTIV EMAS FOYDALANUVCHILAR ==========
+        cursor.execute("SELECT COUNT(*) as count FROM users WHERE is_active = FALSE")
+        stats['total_inactive_users'] = cursor.fetchone()['count'] or 0
+
+        # ========== 4. BUGUNGI YANGI FOYDALANUVCHILAR ==========
+        cursor.execute("""
+            SELECT COUNT(*) as count 
+            FROM users 
+            WHERE DATE(created_at) = CURRENT_DATE
+        """)
+        stats['today_new_users'] = cursor.fetchone()['count'] or 0
+
+        # ========== 5. BUGUNGI AKTIV FOYDALANUVCHILAR (narxlash qilganlar) ==========
+        cursor.execute("""
+            SELECT COUNT(DISTINCT telegram_id) as count
+            FROM pricing_history
+            WHERE DATE(created_at) = CURRENT_DATE
+        """)
+        stats['today_active_users'] = cursor.fetchone()['count'] or 0
+
+        # ========== 6. OYLIK YANGI FOYDALANUVCHILAR ==========
+        cursor.execute("""
+            SELECT COUNT(*) as count 
+            FROM users 
+            WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)
+        """)
+        stats['month_new_users'] = cursor.fetchone()['count'] or 0
+
+        # ========== 7. OYLIK AKTIV FOYDALANUVCHILAR (narxlash qilganlar) ==========
+        cursor.execute("""
+            SELECT COUNT(DISTINCT telegram_id) as count
+            FROM pricing_history
+            WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)
+        """)
+        stats['month_active_users'] = cursor.fetchone()['count'] or 0
+
+        # ========== 8. TELEFON RAQAMI BOR FOYDALANUVCHILAR ==========
+        cursor.execute("""
+            SELECT COUNT(*) as count 
+            FROM users 
+            WHERE phone_number IS NOT NULL
+        """)
+        stats['users_with_phone'] = cursor.fetchone()['count'] or 0
+
+        # ========== 9. BALANS BOR FOYDALANUVCHILAR ==========
+        cursor.execute("""
+            SELECT COUNT(*) as count 
+            FROM users 
+            WHERE balance > 0
+        """)
+        stats['users_with_balance'] = cursor.fetchone()['count'] or 0
+
+        # ========== 10. BEPUL URINISH BOR FOYDALANUVCHILAR ==========
+        cursor.execute("""
+            SELECT COUNT(*) as count 
+            FROM users 
+            WHERE free_trials_left > 0
+        """)
+        stats['users_with_free_trials'] = cursor.fetchone()['count'] or 0
+
+        # ========== 11. FOIZLAR ==========
+        if stats['total_users'] > 0:
+            stats['active_percentage'] = round((stats['total_active_users'] / stats['total_users']) * 100, 1)
+            stats['phone_percentage'] = round((stats['users_with_phone'] / stats['total_users']) * 100, 1)
+        else:
+            stats['active_percentage'] = 0
+            stats['phone_percentage'] = 0
+
         return {
             'success': True,
-            'users': [dict(user) for user in users]
+            'stats': stats,
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
+
     except Exception as e:
+        print(f"❌ Foydalanuvchilar statistikasini olishda xato: {e}")
         return {
             'success': False,
-            'error': str(e)
+            'error': str(e),
+            'stats': {},
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
     finally:
+        cursor.close()
         conn.close()
 
 
-def get_active_users(days=7):
-    """
-    Faol foydalanuvchilarni olish
-    Args:
-        days: oxirgi necha kun ichida faol bo'lganlar (default: 7)
-    Returns: {
-        'success': True/False,
-        'total': int,
-        'users': list,
-        'daily_active': list
-    }
-    """
+def get_detailed_users_statistics():
+    """BATAFSIL FOYDALANUVCHILAR STATISTIKASI"""
     conn = get_user_conn()
-    c = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
-        # Oxirgi N kun ichida narxlash amaliyoti bo'lgan userlar
-        c.execute("""
+        stats = {}
+
+        # Asosiy statistikani olish
+        basic_stats = get_users_statistics()
+        if basic_stats['success']:
+            stats.update(basic_stats['stats'])
+
+        # ========== HAFTALIK STATISTIKA ==========
+        cursor.execute("""
+            SELECT COUNT(*) as count 
+            FROM users 
+            WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
+        """)
+        stats['week_new_users'] = cursor.fetchone()['count'] or 0
+
+        cursor.execute("""
+            SELECT COUNT(DISTINCT telegram_id) as count
+            FROM pricing_history
+            WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
+        """)
+        stats['week_active_users'] = cursor.fetchone()['count'] or 0
+
+        # ========== TOP 10 AKTIV FOYDALANUVCHILAR ==========
+        cursor.execute("""
             SELECT 
                 u.telegram_id,
                 u.full_name,
@@ -678,168 +799,84 @@ def get_active_users(days=7):
                 u.phone_number,
                 u.balance,
                 u.free_trials_left,
-                u.created_at,
-                MAX(ph.created_at) as last_activity,
-                COUNT(ph.id) as activity_count
+                u.total_pricings,
+                u.created_at
             FROM users u
-            LEFT JOIN pricing_history ph ON u.id = ph.user_id
-            WHERE ph.created_at >= datetime('now', ?)
-            GROUP BY u.id, u.telegram_id, u.full_name, u.username, u.phone_number, u.balance, u.free_trials_left, u.created_at
-            ORDER BY last_activity DESC
-        """, (f'-{days} days',))
+            WHERE u.is_active = TRUE
+            ORDER BY u.total_pricings DESC, u.created_at DESC
+            LIMIT 10
+        """)
+        stats['top_users'] = [dict(row) for row in cursor.fetchall()]
 
-        users = c.fetchall()
-
-        # Kunlik faol foydalanuvchilar statistikasi
-        c.execute("""
+        # ========== KUNLIK TREND (oxirgi 7 kun) ==========
+        cursor.execute("""
             SELECT 
-                DATE(ph.created_at) as activity_date,
-                COUNT(DISTINCT ph.user_id) as active_users_count
-            FROM pricing_history ph
-            WHERE ph.created_at >= datetime('now', ?)
-            GROUP BY DATE(ph.created_at)
-            ORDER BY activity_date DESC
-        """, (f'-{days} days',))
-
-        daily_stats = c.fetchall()
-
-        return {
-            'success': True,
-            'total': len(users),
-            'users': [dict(user) for user in users],
-            'daily_active': [dict(stat) for stat in daily_stats]
-        }
-
-    except Exception as e:
-        print(f"❌ Faol foydalanuvchilarni olishda xato: {e}")
-        return {
-            'success': False,
-            'error': str(e),
-            'total': 0,
-            'users': [],
-            'daily_active': []
-        }
-    finally:
-        conn.close()
-
-
-def get_global_stats():
-    """
-    Global statistika ma'lumotlari
-    Returns: dict with global statistics
-    """
-    conn = get_user_conn()
-    c = conn.cursor()
-
-    try:
-        stats = {}
-
-        # 1. Umumiy foydalanuvchilar
-        c.execute("SELECT COUNT(*) as total FROM users")
-        stats['total_users'] = c.fetchone()['total']
-
-        # 2. Bugun qo'shilgan foydalanuvchilar
-        c.execute("""
-            SELECT COUNT(*) as today_users 
-            FROM users 
-            WHERE DATE(created_at) = DATE('now')
-        """)
-        stats['today_new_users'] = c.fetchone()['today_users']
-
-        # 3. Oxirgi 7 kun ichida qo'shilganlar
-        c.execute("""
-            SELECT COUNT(*) as weekly_users 
-            FROM users 
-            WHERE created_at >= datetime('now', '-7 days')
-        """)
-        stats['weekly_new_users'] = c.fetchone()['weekly_users']
-
-        # 4. Telefon raqami kiritgan foydalanuvchilar
-        c.execute("""
-            SELECT COUNT(*) as with_phone 
-            FROM users 
-            WHERE phone_number IS NOT NULL AND phone_number != ''
-        """)
-        stats['users_with_phone'] = c.fetchone()['with_phone']
-
-        # 5. Faol foydalanuvchilar (oxirgi 30 kun ichida narxlash amaliyoti bo'lgan)
-        c.execute("""
-            SELECT COUNT(DISTINCT u.id) as active_users
-            FROM users u
-            JOIN pricing_history ph ON u.id = ph.user_id
-            WHERE ph.created_at >= datetime('now', '-30 days')
-        """)
-        stats['active_users_30d'] = c.fetchone()['active_users']
-
-        # 6. Jami narxlashlar soni
-        c.execute("SELECT COUNT(*) as total_pricings FROM pricing_history")
-        stats['total_pricings'] = c.fetchone()['total_pricings']
-
-        # 7. Kunlik narxlashlar (oxirgi 7 kun)
-        c.execute("""
-            SELECT 
-                DATE(created_at) as pricing_date,
-                COUNT(*) as count
-            FROM pricing_history
-            WHERE created_at >= datetime('now', '-7 days')
+                DATE(created_at) as date,
+                COUNT(*) as new_users
+            FROM users
+            WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
             GROUP BY DATE(created_at)
-            ORDER BY pricing_date DESC
+            ORDER BY date DESC
         """)
-        daily_pricings = c.fetchall()
-        stats['daily_pricings'] = [dict(p) for p in daily_pricings]
+        stats['daily_trend'] = [dict(row) for row in cursor.fetchall()]
 
-        # 8. Bepul vs pullik narxlashlar nisbati
-        c.execute("""
+        # ========== JAMI NARXLASHLAR ==========
+        cursor.execute("SELECT COUNT(*) as count FROM pricing_history")
+        stats['total_pricings'] = cursor.fetchone()['count'] or 0
+
+        cursor.execute("""
+            SELECT COUNT(*) as count 
+            FROM pricing_history 
+            WHERE DATE(created_at) = CURRENT_DATE
+        """)
+        stats['today_pricings'] = cursor.fetchone()['count'] or 0
+
+        cursor.execute("""
+            SELECT COUNT(*) as count 
+            FROM pricing_history 
+            WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)
+        """)
+        stats['month_pricings'] = cursor.fetchone()['count'] or 0
+
+        # ========== BEPUL VS PULLIK NARXLASHLAR ==========
+        cursor.execute("""
             SELECT 
-                SUM(CASE WHEN is_free_trial = 1 THEN 1 ELSE 0 END) as free_count,
-                SUM(CASE WHEN is_free_trial = 0 THEN 1 ELSE 0 END) as paid_count
+                COUNT(CASE WHEN is_free_trial = TRUE THEN 1 END) as free_count,
+                COUNT(CASE WHEN is_free_trial = FALSE THEN 1 END) as paid_count
             FROM pricing_history
         """)
-        ratio = c.fetchone()
+        ratio = cursor.fetchone()
         stats['free_pricings'] = ratio['free_count'] or 0
         stats['paid_pricings'] = ratio['paid_count'] or 0
 
-        # 9. Umumiy balans
-        c.execute("SELECT SUM(balance) as total_balance FROM users")
-        stats['total_balance'] = c.fetchone()['total_balance'] or 0
-
-        # 10. Umumiy bepul urinishlar
-        c.execute("SELECT SUM(free_trials_left) as total_free_trials FROM users")
-        stats['total_free_trials'] = c.fetchone()['total_free_trials'] or 0
-
-        # 11. To'langan umumiy summa
-        c.execute("""
+        # ========== UMUMIY BALANS VA BEPUL URINISHLAR ==========
+        cursor.execute("""
             SELECT 
-                SUM(amount) as total_paid,
-                COUNT(*) as total_payments
-            FROM payment_history 
-            WHERE payment_status = 'completed'
+                COALESCE(SUM(balance), 0) as total_balance,
+                COALESCE(SUM(free_trials_left), 0) as total_free_trials
+            FROM users
         """)
-        payments = c.fetchone()
-        stats['total_paid_amount'] = payments['total_paid'] or 0
+        totals = cursor.fetchone()
+        stats['total_balance'] = int(totals['total_balance'])
+        stats['total_free_trials'] = int(totals['total_free_trials'])
+
+        # ========== TO'LOVLAR STATISTIKASI ==========
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_payments,
+                COALESCE(SUM(amount), 0) as total_amount,
+                COUNT(CASE WHEN payment_status = 'completed' THEN 1 END) as completed_payments,
+                COUNT(CASE WHEN payment_status = 'pending' THEN 1 END) as pending_payments
+            FROM payment_history
+        """)
+        payments = cursor.fetchone()
         stats['total_payments'] = payments['total_payments'] or 0
+        stats['total_paid_amount'] = float(payments['total_amount'] or 0)
+        stats['completed_payments'] = payments['completed_payments'] or 0
+        stats['pending_payments'] = payments['pending_payments'] or 0
 
-        # 12. Eng ko'p narxlagan 10 ta foydalanuvchi
-        c.execute("""
-            SELECT 
-                u.telegram_id,
-                u.full_name,
-                u.username,
-                u.phone_number,
-                COUNT(ph.id) as pricing_count,
-                u.balance,
-                u.free_trials_left
-            FROM users u
-            LEFT JOIN pricing_history ph ON u.id = ph.user_id
-            GROUP BY u.id
-            ORDER BY pricing_count DESC
-            LIMIT 10
-        """)
-        top_users = c.fetchall()
-        stats['top_users'] = [dict(user) for user in top_users]
-
-        # 13. Eng ko'p narxlanayotgan telefon modellari
-        c.execute("""
+        # ========== ENG KO'P NARXLANAYOTGAN TELEFONLAR ==========
+        cursor.execute("""
             SELECT 
                 phone_model,
                 COUNT(*) as count
@@ -849,8 +886,7 @@ def get_global_stats():
             ORDER BY count DESC
             LIMIT 10
         """)
-        top_models = c.fetchall()
-        stats['top_phone_models'] = [dict(model) for model in top_models]
+        stats['top_phone_models'] = [dict(row) for row in cursor.fetchall()]
 
         return {
             'success': True,
@@ -859,7 +895,7 @@ def get_global_stats():
         }
 
     except Exception as e:
-        print(f"❌ Global statistikani olishda xato: {e}")
+        print(f"❌ Batafsil statistikani olishda xato: {e}")
         return {
             'success': False,
             'error': str(e),
@@ -867,180 +903,98 @@ def get_global_stats():
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
     finally:
+        cursor.close()
         conn.close()
 
 
-def get_total_price_inquiries(period='all'):
-    """
-    Narxlash so'rovlari sonini olish
-    Args:
-        period: 'all' | 'today' | 'week' | 'month' | 'year'
-    Returns: {
-        'success': True/False,
-        'total': int,
-        'period': str,
-        'details': dict
-    }
-    """
+def get_all_users_count():
+    """Jami userlar soni (aktiv)"""
     conn = get_user_conn()
-    c = conn.cursor()
-
+    cursor = conn.cursor()
     try:
-        base_query = "SELECT COUNT(*) as total FROM pricing_history"
-        where_clause = ""
-
-        if period == 'today':
-            where_clause = " WHERE DATE(created_at) = DATE('now')"
-        elif period == 'week':
-            where_clause = " WHERE created_at >= datetime('now', '-7 days')"
-        elif period == 'month':
-            where_clause = " WHERE created_at >= datetime('now', '-30 days')"
-        elif period == 'year':
-            where_clause = " WHERE created_at >= datetime('now', '-365 days')"
-
-        # Umumiy son
-        c.execute(f"{base_query}{where_clause}")
-        total = c.fetchone()['total']
-
-        # Qo'shimcha statistikalar
-        details = {}
-
-        if period != 'all':
-            # Kunlik statistikalar (oxirgi 30 kun)
-            c.execute("""
-                SELECT 
-                    DATE(created_at) as date,
-                    COUNT(*) as count,
-                    SUM(CASE WHEN is_free_trial = 1 THEN 1 ELSE 0 END) as free_count,
-                    SUM(CASE WHEN is_free_trial = 0 THEN 1 ELSE 0 END) as paid_count
-                FROM pricing_history
-                WHERE created_at >= datetime('now', '-30 days')
-                GROUP BY DATE(created_at)
-                ORDER BY date DESC
-            """)
-            daily_stats = c.fetchall()
-            details['daily_stats'] = [dict(stat) for stat in daily_stats]
-
-        # Soatlik statistikalar (bugungi)
-        c.execute("""
-            SELECT 
-                strftime('%H', created_at) as hour,
-                COUNT(*) as count
-            FROM pricing_history
-            WHERE DATE(created_at) = DATE('now')
-            GROUP BY strftime('%H', created_at)
-            ORDER BY hour
-        """)
-        hourly_stats = c.fetchall()
-        details['hourly_stats'] = [dict(stat) for stat in hourly_stats]
-
-        # Bepul vs pullik nisbati
-        c.execute(f"""
-            SELECT 
-                SUM(CASE WHEN is_free_trial = 1 THEN 1 ELSE 0 END) as free_count,
-                SUM(CASE WHEN is_free_trial = 0 THEN 1 ELSE 0 END) as paid_count
-            FROM pricing_history{where_clause}
-        """)
-        ratio = c.fetchone()
-        details['free_count'] = ratio['free_count'] or 0
-        details['paid_count'] = ratio['paid_count'] or 0
-
-        # Eng faol soatlar
-        c.execute("""
-            SELECT 
-                strftime('%H:00', created_at) as time_slot,
-                COUNT(*) as count
-            FROM pricing_history
-            WHERE created_at >= datetime('now', '-7 days')
-            GROUP BY strftime('%H', created_at)
-            ORDER BY count DESC
-            LIMIT 5
-        """)
-        top_hours = c.fetchall()
-        details['top_hours'] = [dict(hour) for hour in top_hours]
-
-        return {
-            'success': True,
-            'total': total,
-            'period': period,
-            'details': details
-        }
-
-    except Exception as e:
-        print(f"❌ Narxlash so'rovlarini olishda xato: {e}")
-        return {
-            'success': False,
-            'error': str(e),
-            'total': 0,
-            'period': period,
-            'details': {}
-        }
+        cursor.execute("SELECT COUNT(*) FROM users WHERE is_active = TRUE")
+        return cursor.fetchone()[0] or 0
+    except:
+        return 0
     finally:
+        cursor.close()
         conn.close()
 
 
-def get_user_growth_stats(days=30):
-    """
-    Foydalanuvchilar o'sishi statistikasi
-    Args:
-        days: necha kunlik statistikani ko'rish
-    Returns: {
-        'success': True/False,
-        'daily_growth': list,
-        'total_growth': int,
-        'average_daily': float
-    }
-    """
+def get_total_pricings():
+    """Jami narxlashlar soni"""
     conn = get_user_conn()
-    c = conn.cursor()
-
+    cursor = conn.cursor()
     try:
-        # Kunlik yangi foydalanuvchilar
-        c.execute(f"""
-            SELECT 
-                DATE(created_at) as date,
-                COUNT(*) as new_users
-            FROM users
-            WHERE created_at >= datetime('now', '-{days} days')
-            GROUP BY DATE(created_at)
-            ORDER BY date
-        """)
-        daily_growth = c.fetchall()
-
-        # Jami o'sish
-        c.execute(f"""
-            SELECT COUNT(*) as total_growth 
-            FROM users 
-            WHERE created_at >= datetime('now', '-{days} days')
-        """)
-        total_growth = c.fetchone()['total_growth']
-
-        # O'rtacha kunlik o'sish
-        avg_daily = total_growth / days if days > 0 else 0
-
-        return {
-            'success': True,
-            'daily_growth': [dict(day) for day in daily_growth],
-            'total_growth': total_growth,
-            'average_daily': round(avg_daily, 2),
-            'period_days': days
-        }
-
-    except Exception as e:
-        print(f"❌ Foydalanuvchilar o'sish statistikasini olishda xato: {e}")
-        return {
-            'success': False,
-            'error': str(e),
-            'daily_growth': [],
-            'total_growth': 0,
-            'average_daily': 0,
-            'period_days': days
-        }
+        cursor.execute("SELECT COUNT(*) FROM pricing_history")
+        return cursor.fetchone()[0] or 0
+    except:
+        return 0
     finally:
+        cursor.close()
         conn.close()
 
 
-# Initialization
+# ============================================================
+# TEST FUNKSIYASI
+# ============================================================
+
+def test_user_connection():
+    """PostgreSQL ulanishini tekshirish"""
+    try:
+        conn = get_user_conn()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT version();")
+        version = cursor.fetchone()[0]
+        print(f"✅ PostgreSQL user database ga muvaffaqiyatli ulandi!")
+        print(f"📊 Versiya: {version}")
+
+        cursor.execute("""
+            SELECT table_name FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name IN ('users', 'pricing_history', 'payment_history')
+        """)
+        tables = cursor.fetchall()
+        print(f"📋 Mavjud jadvallar: {[t[0] for t in tables]}")
+
+        cursor.close()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"❌ Ulanishda xato: {e}")
+        return False
+
+
+# ============================================================
+# INITIALIZATION
+# ============================================================
+
 if __name__ == "__main__":
-    init_user_db()
-    print("✅ User database tayyor - 5 ta bepul urinish bilan!")
+    if test_user_connection():
+        init_user_db()
+        print("\n" + "=" * 60)
+        print("✅ PostgreSQL user database to'liq tayyor!")
+        print("=" * 60)
+        print("\n📊 MAVJUD FUNKSIYALAR:")
+        print("\n🔹 USER BOSHQARUV:")
+        print("   - create_user()")
+        print("   - get_user()")
+        print("   - update_phone_number()")
+        print("\n🔹 NARXLASH:")
+        print("   - check_can_price()")
+        print("   - use_pricing()")
+        print("\n🔹 BALANS:")
+        print("   - get_user_balance()")
+        print("   - add_balance()")
+        print("\n🔹 TO'LOVLAR:")
+        print("   - add_payment_record()")
+        print("   - complete_payment()")
+        print("\n🔹 TARIX:")
+        print("   - get_user_history()")
+        print("\n🔹 STATISTIKA: ⭐")
+        print("   - get_users_statistics()")
+        print("   - get_detailed_users_statistics()")
+        print("   - get_all_users_count()")
+        print("   - get_total_pricings()")
+        print("\n" + "=" * 60 + "\n")

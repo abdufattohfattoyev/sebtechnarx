@@ -10,7 +10,7 @@ load_dotenv()
 
 # Database konfiguratsiyasi
 DB_CONFIG = {
-    'dbname': os.getenv('DB_NAME', 'phones_db'),
+    'dbname': os.getenv('DB_NAME', 'phones1_db'),
     'user': os.getenv('DB_USER', 'postgres'),
     'password': os.getenv('DB_PASSWORD', '12345678'),
     'host': os.getenv('DB_HOST', 'localhost'),
