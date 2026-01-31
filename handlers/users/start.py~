@@ -181,17 +181,21 @@ def sort_models_naturally(models):
 
 def sort_storages_naturally(storages):
     """Xotiralarni tartibga solish"""
+
     def extract_size(s):
         match = re.search(r'(\d+)', s)
         return int(match.group(1)) if match else 0
+
     return sorted(storages, key=lambda x: extract_size(x['size']), reverse=True)
 
 
 def sort_batteries_naturally(batteries):
     """Batareyalarni tartibga solish"""
+
     def extract_percent(l):
         match = re.search(r'(\d+)', l)
         return int(match.group(1)) if match else 0
+
     return sorted(batteries, key=lambda x: extract_percent(x['label']), reverse=True)
 
 
@@ -815,46 +819,28 @@ async def choose_model(message: types.Message, state: FSMContext):
             return
 
     # ============================================================
-    # ⭐ USER MAVJUDLIGINI TEKSHIRISH VA YARATISH
+    # ⭐ USER MAVJUDLIGINI TEKSHIRISH
     # ============================================================
-    try:
-        local_check = check_can_price(user_id)
+    local_check = check_can_price(user_id)
 
-        # Agar user bazada bo'lmasa - yaratish
-        if not local_check.get('can_price') and local_check.get('reason') == 'User topilmadi':
-            # User yaratish
-            user_result = await asyncio.to_thread(
-                create_user,
-                user_id,
-                message.from_user.full_name or f"User{user_id}",
-                message.from_user.username or "",
-                None
-            )
+    # Agar user bazada yo'q bo'lsa - /start bosishni talab qilish
+    if local_check.get('reason') == 'User topilmadi':
+        text = """❌ <b>Siz hali ro'yxatdan o'tmagansiz!</b>
 
-            # API ga ham qo'shish
-            try:
-                await api.create_user(
-                    user_id,
-                    message.from_user.full_name or f"User{user_id}",
-                    message.from_user.username or ""
-                )
-            except:
-                pass
+📝 Iltimos, botni ishga tushirish uchun /start bosing.
 
-            # Qayta tekshirish
-            local_check = check_can_price(user_id)
-    except Exception as e:
-        logger.error(f"User check/create error: {e}")
-        await message.answer("❌ Xatolik yuz berdi. Iltimos /start bosing")
+🎁 Ro'yxatdan o'tganingizda <b>5 ta bepul urinish</b> olasiz!"""
+
+        from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+        kb = ReplyKeyboardMarkup(resize_keyboard=True)
+        kb.row(KeyboardButton("/start"))
+
+        await message.answer(text, reply_markup=kb, parse_mode="HTML")
         return
 
     # ============================================================
     # ⭐ BALANS TEKSHIRISH
     # ============================================================
-    if not local_check.get("success", True):
-        await message.answer("❌ User topilmadi. /start bosing")
-        return
-
     if local_check.get("need_phone"):
         await message.answer(local_check.get("message", "📱 Telefon kerak"))
         return
