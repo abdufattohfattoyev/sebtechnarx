@@ -429,7 +429,8 @@ def use_pricing(telegram_id, phone_model, storage, color, battery, sim_type, has
             (user_id, telegram_id, phone_model, storage, color, battery, sim_type, has_box, damage, price, is_free_trial)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
-        """, (user_id, telegram_id, phone_model, storage, color, battery, sim_type, has_box, damage, price, is_free_trial))
+        """, (
+        user_id, telegram_id, phone_model, storage, color, battery, sim_type, has_box, damage, price, is_free_trial))
 
         pricing_id = cursor.fetchone()['id']
         conn.commit()
@@ -703,44 +704,93 @@ def get_user_history(telegram_id, limit=20):
 
 
 def get_users_statistics():
-    """Umumiy foydalanuvchilar statistikasi"""
+    """Umumiy foydalanuvchilar statistikasi - TO'LIQ"""
     conn = get_user_conn()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
         stats = {}
 
-        # Jami userlar
-        cursor.execute("SELECT COUNT(*) as count FROM users WHERE is_active = TRUE")
-        stats['total_users'] = cursor.fetchone()['count'] or 0
+        # ========== JAMI USERLAR ==========
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total,
+                COUNT(CASE WHEN is_active = TRUE THEN 1 END) as active,
+                COUNT(CASE WHEN is_active = FALSE THEN 1 END) as inactive
+            FROM users
+        """)
+        user_counts = cursor.fetchone()
+        stats['total_users'] = user_counts['total'] or 0
+        stats['total_active_users'] = user_counts['active'] or 0
+        stats['total_inactive_users'] = user_counts['inactive'] or 0
 
-        # Bugungi userlar
+        # Aktiv foiz
+        if stats['total_users'] > 0:
+            stats['active_percentage'] = round((stats['total_active_users'] / stats['total_users']) * 100, 1)
+        else:
+            stats['active_percentage'] = 0
+
+        # ========== BUGUNGI STATISTIKA ==========
         cursor.execute("""
             SELECT COUNT(*) as count FROM users 
             WHERE DATE(created_at) = CURRENT_DATE
         """)
-        stats['today_users'] = cursor.fetchone()['count'] or 0
+        stats['today_new_users'] = cursor.fetchone()['count'] or 0
 
-        # Oylik userlar
+        # Bugungi aktiv userlar (bugun narxlash qilganlar)
+        cursor.execute("""
+            SELECT COUNT(DISTINCT telegram_id) as count 
+            FROM pricing_history 
+            WHERE DATE(created_at) = CURRENT_DATE
+        """)
+        stats['today_active_users'] = cursor.fetchone()['count'] or 0
+
+        # ========== HAFTALIK STATISTIKA ==========
+        cursor.execute("""
+            SELECT COUNT(*) as count FROM users 
+            WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
+        """)
+        stats['week_new_users'] = cursor.fetchone()['count'] or 0
+
+        # ========== OYLIK STATISTIKA ==========
         cursor.execute("""
             SELECT COUNT(*) as count FROM users 
             WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)
         """)
-        stats['month_users'] = cursor.fetchone()['count'] or 0
+        stats['month_new_users'] = cursor.fetchone()['count'] or 0
 
-        # Balans bilan userlar
+        # Oylik aktiv userlar (bu oyda narxlash qilganlar)
+        cursor.execute("""
+            SELECT COUNT(DISTINCT telegram_id) as count 
+            FROM pricing_history 
+            WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)
+        """)
+        stats['month_active_users'] = cursor.fetchone()['count'] or 0
+
+        # ========== TELEFON STATISTIKASI ==========
+        cursor.execute("""
+            SELECT COUNT(*) as count FROM users 
+            WHERE phone_number IS NOT NULL AND phone_number != ''
+        """)
+        stats['users_with_phone'] = cursor.fetchone()['count'] or 0
+
+        # Telefon foiz
+        if stats['total_users'] > 0:
+            stats['phone_percentage'] = round((stats['users_with_phone'] / stats['total_users']) * 100, 1)
+        else:
+            stats['phone_percentage'] = 0
+
+        # ========== BALANS STATISTIKASI ==========
         cursor.execute("SELECT COUNT(*) as count FROM users WHERE balance > 0")
         stats['users_with_balance'] = cursor.fetchone()['count'] or 0
 
-        # Bepul urinishlar bilan userlar
         cursor.execute("SELECT COUNT(*) as count FROM users WHERE free_trials_left > 0")
         stats['users_with_free_trials'] = cursor.fetchone()['count'] or 0
 
-        # Jami narxlashlar
+        # ========== NARXLASHLAR ==========
         cursor.execute("SELECT COUNT(*) as count FROM pricing_history")
         stats['total_pricings'] = cursor.fetchone()['count'] or 0
 
-        # Bugungi narxlashlar
         cursor.execute("""
             SELECT COUNT(*) as count FROM pricing_history 
             WHERE DATE(created_at) = CURRENT_DATE
@@ -749,7 +799,8 @@ def get_users_statistics():
 
         return {
             'success': True,
-            'stats': stats
+            'stats': stats,
+            'timestamp': datetime.now().strftime('%d.%m.%Y %H:%M')
         }
 
     except Exception as e:
@@ -757,7 +808,8 @@ def get_users_statistics():
         return {
             'success': False,
             'error': str(e),
-            'stats': {}
+            'stats': {},
+            'timestamp': datetime.now().strftime('%d.%m.%Y %H:%M')
         }
     finally:
         cursor.close()

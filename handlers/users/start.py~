@@ -814,9 +814,44 @@ async def choose_model(message: types.Message, state: FSMContext):
             await message.answer(text, reply_markup=subscription_keyboard(), parse_mode="HTML")
             return
 
-    local_check = check_can_price(user_id)
+    # ============================================================
+    # ⭐ USER MAVJUDLIGINI TEKSHIRISH VA YARATISH
+    # ============================================================
+    try:
+        local_check = check_can_price(user_id)
 
-    if not local_check.get("success"):
+        # Agar user bazada bo'lmasa - yaratish
+        if not local_check.get('can_price') and local_check.get('reason') == 'User topilmadi':
+            # User yaratish
+            user_result = await asyncio.to_thread(
+                create_user,
+                user_id,
+                message.from_user.full_name or f"User{user_id}",
+                message.from_user.username or "",
+                None
+            )
+
+            # API ga ham qo'shish
+            try:
+                await api.create_user(
+                    user_id,
+                    message.from_user.full_name or f"User{user_id}",
+                    message.from_user.username or ""
+                )
+            except:
+                pass
+
+            # Qayta tekshirish
+            local_check = check_can_price(user_id)
+    except Exception as e:
+        logger.error(f"User check/create error: {e}")
+        await message.answer("❌ Xatolik yuz berdi. Iltimos /start bosing")
+        return
+
+    # ============================================================
+    # ⭐ BALANS TEKSHIRISH
+    # ============================================================
+    if not local_check.get("success", True):
         await message.answer("❌ User topilmadi. /start bosing")
         return
 
