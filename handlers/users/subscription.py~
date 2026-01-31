@@ -1,8 +1,8 @@
-# utils/misc/subscription.py - MAJBURIY OBUNA TIZIMI
+# utils/misc/subscription.py - MAJBURIY OBUNA TIZIMI (FIXED)
 
 from aiogram import types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from loader import bot
+from loader import bot, dp
 
 # ============= KANAL SOZLAMALARI =============
 CHANNEL_USERNAME = "@sebtech1"  # @ belgisi bilan
@@ -57,10 +57,40 @@ def subscription_keyboard() -> InlineKeyboardMarkup:
 
 
 # ============= OBUNA XABARI =============
-SUBSCRIPTION_TEXT = """🔒 <b>Botdan foydalanish uchun kanalimizga obuna bo'ling!</b>
+SUBSCRIPTION_TEXT = """🔐 <b>Botdan foydalanish uchun kanalimizga obuna bo'ling!</b>
 
 <b>Obunadan so'ng "✅ Obuna bo'ldim" tugmasini bosing!</b>
 """
+
+
+# ============= OBUNA CALLBACK HANDLER =============
+@dp.callback_query_handler(lambda c: c.data == "check_subscription", state="*")
+async def check_subscription_callback(call: types.CallbackQuery):
+    """
+    "✅ Obuna bo'ldim" tugmasi bosilganda
+    """
+    await call.answer("🔄 Tekshirilmoqda...")
+
+    is_subscribed = await check_subscription(call.from_user.id)
+
+    if is_subscribed:
+        try:
+            await call.message.delete()
+        except:
+            pass
+
+        await call.message.answer(
+            "✅ <b>Obuna tasdiqlandi!</b>\n\n"
+            "🎉 Endi botdan to'liq foydalanishingiz mumkin!\n\n"
+            "Iltimos, /start buyrug'ini bosing!",
+            parse_mode="HTML"
+        )
+    else:
+        await call.answer(
+            "❌ Siz hali obuna bo'lmagansiz!\n\n"
+            "📢 Kanalga obuna bo'lib, qaytadan tugmani bosing.",
+            show_alert=True
+        )
 
 
 # ============= OBUNA DECORATOR =============
@@ -89,38 +119,14 @@ def subscription_required(handler):
         is_subscribed = await check_subscription(user_id)
 
         if not is_subscribed:
-            text = SUBSCRIPTION_TEXT.format(channel=CHANNEL_USERNAME)
-            await chat.answer(text, reply_markup=subscription_keyboard(), parse_mode="HTML")
+            await chat.answer(
+                SUBSCRIPTION_TEXT,
+                reply_markup=subscription_keyboard(),
+                parse_mode="HTML"
+            )
             return
 
         # Obuna bo'lsa - handler ishlatish
         return await handler(event, *args, **kwargs)
 
     return wrapper
-
-
-# ============= INLINE CALLBACK =============
-async def check_subscription_callback(call: types.CallbackQuery):
-    """
-    "✅ Obuna bo'ldim" tugmasi bosilganda
-    """
-    await call.answer("🔄 Tekshirilmoqda...")
-
-    is_subscribed = await check_subscription(call.from_user.id)
-
-    if is_subscribed:
-        await call.message.delete()
-        await call.message.answer(
-            "✅ <b>Obuna tasdiqlandi!</b>\n\n"
-            "🎉 Endi botdan to'liq foydalanishingiz mumkin!",
-            parse_mode="HTML"
-        )
-        # /start ni qayta chaqirish
-        from handlers.users.start import start
-        await start(call.message, call.message.state)
-    else:
-        await call.answer(
-            "❌ Siz hali obuna bo'lmagansiz!\n\n"
-            "📢 Kanalga obuna bo'lib, qaytadan tugmani bosing.",
-            show_alert=True
-        )
