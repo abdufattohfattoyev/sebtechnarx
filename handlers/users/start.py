@@ -305,13 +305,13 @@ async def start(message: types.Message, state: FSMContext):
         api_balance = int(api_result.get('balance', 0))
 
         # Local dan bepul urinishlarni olish
-        free_trials = 5  # Default
+        free_trials = 3  # Default
         local_balance = 0
 
         try:
             local_data = get_user_balance(user.id)
             if local_data.get('success'):
-                free_trials = int(local_data.get('free_trials_left', 5))
+                free_trials = int(local_data.get('free_trials_left', 3))
                 local_balance = int(local_data.get('balance', 0))
         except Exception as e:
             logger.warning(f"Failed to get local balance: {e}")
@@ -442,13 +442,13 @@ async def check_subscription_callback(call: types.CallbackQuery, state: FSMConte
             phone = api_result.get('phone')
             api_balance = int(api_result.get('balance', 0))
 
-            free_trials = 5
+            free_trials = 3
             local_balance = 0
 
             try:
                 local_data = get_user_balance(user.id)
                 if local_data.get('success'):
-                    free_trials = int(local_data.get('free_trials_left', 5))
+                    free_trials = int(local_data.get('free_trials_left', 3))
                     local_balance = int(local_data.get('balance', 0))
             except:
                 pass
@@ -561,9 +561,9 @@ async def receive_phone(message: types.Message, state: FSMContext):
 
     try:
         local_data = get_user_balance(message.from_user.id)
-        free_trials = local_data.get('free_trials_left', 5)
+        free_trials = local_data.get('free_trials_left', 3)
     except:
-        free_trials = 5
+        free_trials = 3
 
     try:
         models = get_models()
