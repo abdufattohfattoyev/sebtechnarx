@@ -825,7 +825,9 @@ async def choose_model(message: types.Message, state: FSMContext):
 
     # Agar user bazada yo'q bo'lsa - /start bosishni talab qilish
     if local_check.get('reason') == 'User topilmadi':
-        text = """📝 Iltimos,botni ishga tushirish uchun /start bosing.
+        text = """❌ <b>Siz hali ro'yxatdan o'tmagansiz!</b>
+
+📝 Iltimos, botni ishga tushirish uchun /start bosing.
 
 🎁 Ro'yxatdan o'tganingizda <b>3 ta bepul urinish</b> olasiz!"""
 

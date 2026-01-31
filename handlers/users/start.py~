@@ -825,11 +825,9 @@ async def choose_model(message: types.Message, state: FSMContext):
 
     # Agar user bazada yo'q bo'lsa - /start bosishni talab qilish
     if local_check.get('reason') == 'User topilmadi':
-        text = """❌ <b>Siz hali ro'yxatdan o'tmagansiz!</b>
+        text = """📝 Iltimos,botni ishga tushirish uchun /start bosing.
 
-📝 Iltimos, botni ishga tushirish uchun /start bosing.
-
-🎁 Ro'yxatdan o'tganingizda <b>5 ta bepul urinish</b> olasiz!"""
+🎁 Ro'yxatdan o'tganingizda <b>3 ta bepul urinish</b> olasiz!"""
 
         from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
         kb = ReplyKeyboardMarkup(resize_keyboard=True)
