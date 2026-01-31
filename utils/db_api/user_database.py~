@@ -935,6 +935,27 @@ def get_total_pricings():
         conn.close()
 
 
+def get_all_users():
+    """Barcha aktiv foydalanuvchilarni olish (reklama uchun)"""
+    conn = get_user_conn()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cursor.execute("""
+            SELECT telegram_id, full_name, username, phone_number, created_at
+            FROM users
+            WHERE is_active = TRUE
+            ORDER BY created_at DESC
+        """)
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+    except Exception as e:
+        print(f"❌ Foydalanuvchilarni olishda xato: {e}")
+        return []
+    finally:
+        cursor.close()
+        conn.close()
+
+
 # ============================================================
 # TEST FUNKSIYASI
 # ============================================================
