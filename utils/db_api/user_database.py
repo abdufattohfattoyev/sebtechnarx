@@ -50,7 +50,7 @@ def init_user_db():
                 phone_number VARCHAR(20),
                 full_name VARCHAR(255),
                 username VARCHAR(255),
-                free_trials_left INTEGER DEFAULT 5,
+                free_trials_left INTEGER DEFAULT 3,
                 balance INTEGER DEFAULT 0,
                 total_pricings INTEGER DEFAULT 0,
                 is_active BOOLEAN DEFAULT TRUE,

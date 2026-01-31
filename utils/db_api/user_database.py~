@@ -1,4 +1,4 @@
-# utils/db_api/user_database.py - PostgreSQL TO'LIQ VERSIYA (0 DAN YOZILGAN)
+# utils/db_api/user_database.py - FOYDALANUVCHILAR BAZASI
 import psycopg2
 import psycopg2.extras
 import os
@@ -8,20 +8,20 @@ from dotenv import load_dotenv
 # .env faylni yuklash
 load_dotenv()
 
-# Database konfiguratsiyasi
-DB_CONFIG = {
-    'dbname': os.getenv('DB_NAME', 'phones_db'),
-    'user': os.getenv('DB_USER', 'postgres'),
-    'password': os.getenv('DB_PASSWORD', '12345678'),
-    'host': os.getenv('DB_HOST', 'localhost'),
-    'port': os.getenv('DB_PORT', '5432')
+# USER DATABASE konfiguratsiyasi - ALOHIDA ENVIRONMENT VARIABLES
+USER_DB_CONFIG = {
+    'dbname': os.getenv('USER_DB_NAME', 'users_db'),
+    'user': os.getenv('USER_DB_USER', 'postgres'),
+    'password': os.getenv('USER_DB_PASSWORD', '12345678'),
+    'host': os.getenv('USER_DB_HOST', 'localhost'),
+    'port': os.getenv('USER_DB_PORT', '5432')
 }
 
 
 def get_user_conn():
-    """PostgreSQL database ulanishini yaratish"""
+    """User database ulanishini yaratish"""
     try:
-        conn = psycopg2.connect(**DB_CONFIG)
+        conn = psycopg2.connect(**USER_DB_CONFIG)
         return conn
     except psycopg2.OperationalError as e:
         print(f"❌ User database ga ulanishda xato: {e}")
@@ -38,7 +38,8 @@ def init_user_db():
 
     try:
         print("\n" + "=" * 60)
-        print("🚀 PostgreSQL User Database yaratilmoqda...")
+        print("🚀 PostgreSQL USER Database yaratilmoqda...")
+        print(f"📊 Database: {USER_DB_CONFIG['dbname']}")
         print("=" * 60)
 
         # ===================== USERS JADVALI =====================
@@ -218,12 +219,21 @@ def create_user(telegram_id, full_name, username=None, phone_number=None):
                 }
         except:
             pass
-
-        return {'success': False, 'error': 'Database xatosi'}
+        return {
+            'success': False,
+            'error': 'User yaratishda xato',
+            'user': None,
+            'is_new': False
+        }
     except Exception as e:
         conn.rollback()
         print(f"❌ User yaratishda xato: {e}")
-        return {'success': False, 'error': str(e)}
+        return {
+            'success': False,
+            'error': str(e),
+            'user': None,
+            'is_new': False
+        }
     finally:
         cursor.close()
         conn.close()
@@ -239,42 +249,63 @@ def get_user(telegram_id):
         user = cursor.fetchone()
 
         if user:
-            return {'success': True, 'user': dict(user)}
+            return {
+                'success': True,
+                'user': dict(user)
+            }
         else:
-            return {'success': False, 'error': 'User topilmadi'}
+            return {
+                'success': False,
+                'error': 'User topilmadi',
+                'user': None
+            }
+
     except Exception as e:
         print(f"❌ User olishda xato: {e}")
-        return {'success': False, 'error': str(e)}
+        return {
+            'success': False,
+            'error': str(e),
+            'user': None
+        }
     finally:
         cursor.close()
         conn.close()
 
 
 def update_phone_number(telegram_id, phone_number):
-    """Telefon raqamini yangilash"""
+    """User telefon raqamini yangilash"""
     conn = get_user_conn()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
         cursor.execute("""
             UPDATE users 
-            SET phone_number = %s, 
-                updated_at = CURRENT_TIMESTAMP
+            SET phone_number = %s, updated_at = CURRENT_TIMESTAMP 
             WHERE telegram_id = %s
-            RETURNING id
+            RETURNING *
         """, (phone_number, telegram_id))
-
-        result = cursor.fetchone()
+        user = cursor.fetchone()
         conn.commit()
 
-        if result:
-            return {'success': True, 'message': '✅ Telefon raqami saqlandi'}
+        if user:
+            return {
+                'success': True,
+                'user': dict(user),
+                'message': '✅ Telefon raqam yangilandi'
+            }
         else:
-            return {'success': False, 'error': 'User topilmadi'}
+            return {
+                'success': False,
+                'error': 'User topilmadi'
+            }
+
     except Exception as e:
         conn.rollback()
-        print(f"❌ Telefon raqamini yangilashda xato: {e}")
-        return {'success': False, 'error': str(e)}
+        print(f"❌ Telefon raqam yangilashda xato: {e}")
+        return {
+            'success': False,
+            'error': str(e)
+        }
     finally:
         cursor.close()
         conn.close()
@@ -285,172 +316,145 @@ def update_phone_number(telegram_id, phone_number):
 # ============================================================
 
 def check_can_price(telegram_id):
-    """Narxlash imkoniyatini tekshirish"""
+    """User narx olishi mumkinmi tekshirish"""
     conn = get_user_conn()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
-        cursor.execute("""
-            SELECT free_trials_left, phone_number, balance, is_active
-            FROM users
-            WHERE telegram_id = %s
-        """, (telegram_id,))
-
+        cursor.execute("SELECT * FROM users WHERE telegram_id = %s", (telegram_id,))
         user = cursor.fetchone()
 
         if not user:
             return {
-                'success': False,
-                'error': 'User topilmadi',
-                'can_price': False
-            }
-
-        free_trials = int(user['free_trials_left'] or 0)
-        phone = user['phone_number']
-        balance = int(user['balance'] or 0)
-        is_active = user['is_active']
-
-        if not is_active:
-            return {
-                'success': False,
-                'error': '❌ Hisobingiz faol emas',
-                'can_price': False
-            }
-
-        if not phone:
-            return {
-                'success': False,
-                'error': '📱 Avval telefon raqamingizni kiriting',
                 'can_price': False,
-                'needs_phone': True
+                'reason': 'User topilmadi',
+                'free_trials_left': 0,
+                'balance': 0
             }
 
-        if free_trials > 0 or balance > 0:
+        user_dict = dict(user)
+        free_trials = user_dict.get('free_trials_left', 0)
+        balance = user_dict.get('balance', 0)
+
+        if free_trials > 0:
             return {
-                'success': True,
                 'can_price': True,
+                'reason': 'free_trial',
                 'free_trials_left': free_trials,
-                'balance': balance,
-                'phone_number': phone
+                'balance': balance
+            }
+        elif balance > 0:
+            return {
+                'can_price': True,
+                'reason': 'balance',
+                'free_trials_left': free_trials,
+                'balance': balance
             }
         else:
             return {
-                'success': False,
-                'error': '💰 Balans yetarli emas',
                 'can_price': False,
-                'free_trials_left': 0,
-                'balance': 0,
-                'needs_payment': True
+                'reason': 'no_credits',
+                'free_trials_left': free_trials,
+                'balance': balance
             }
 
     except Exception as e:
-        print(f"❌ Narxlash tekshirishda xato: {e}")
-        return {'success': False, 'error': 'Tekshirishda xato', 'can_price': False}
+        print(f"❌ Check can price xato: {e}")
+        return {
+            'can_price': False,
+            'reason': 'error',
+            'error': str(e),
+            'free_trials_left': 0,
+            'balance': 0
+        }
     finally:
         cursor.close()
         conn.close()
 
 
 def use_pricing(telegram_id, phone_model, storage, color, battery, sim_type, has_box, damage, price):
-    """Narxlashni ishlatish - AVVAL BEPUL, KEYIN BALANS"""
+    """Narxlash qilish va tarixga qo'shish"""
     conn = get_user_conn()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
-        conn.autocommit = False
-
-        # User ni lock bilan olish
-        cursor.execute("""
-            SELECT id, free_trials_left, balance, phone_number, is_active
-            FROM users
-            WHERE telegram_id = %s
-            FOR UPDATE
-        """, (telegram_id,))
-
+        # User olish
+        cursor.execute("SELECT * FROM users WHERE telegram_id = %s", (telegram_id,))
         user = cursor.fetchone()
 
         if not user:
-            conn.rollback()
-            return {'success': False, 'error': 'User topilmadi'}
-
-        user_id = user['id']
-        free_trials = int(user['free_trials_left'] or 0)
-        balance = int(user['balance'] or 0)
-        phone = user['phone_number']
-        is_active = user['is_active']
-
-        # Tekshirishlar
-        if not is_active:
-            conn.rollback()
-            return {'success': False, 'error': '❌ Hisobingiz faol emas'}
-
-        if not phone:
-            conn.rollback()
-            return {'success': False, 'error': '📱 Avval telefon raqamingizni kiriting'}
-
-        if free_trials <= 0 and balance <= 0:
-            conn.rollback()
             return {
                 'success': False,
-                'error': '💰 Balans yetarli emas',
-                'needs_payment': True
+                'error': 'User topilmadi'
             }
 
-        # Narxlash turini aniqlash
-        is_free_trial = free_trials > 0
+        user_dict = dict(user)
+        user_id = user_dict['id']
+        free_trials = user_dict.get('free_trials_left', 0)
+        balance = user_dict.get('balance', 0)
 
-        if is_free_trial:
-            # Bepul urinishdan
+        is_free_trial = False
+
+        # Bepul urinish
+        if free_trials > 0:
             cursor.execute("""
                 UPDATE users 
                 SET free_trials_left = free_trials_left - 1,
                     total_pricings = total_pricings + 1,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE telegram_id = %s
-                RETURNING free_trials_left, balance
             """, (telegram_id,))
-        else:
-            # Balansdan
+            is_free_trial = True
+
+        # Balansdan olish
+        elif balance > 0:
             cursor.execute("""
                 UPDATE users 
                 SET balance = balance - 1,
                     total_pricings = total_pricings + 1,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE telegram_id = %s
-                RETURNING free_trials_left, balance
             """, (telegram_id,))
+            is_free_trial = False
 
-        updated = cursor.fetchone()
+        else:
+            return {
+                'success': False,
+                'error': 'Balans yoki bepul urinish yo\'q'
+            }
 
-        # Tarixga yozish
+        # Tarixga qo'shish
         cursor.execute("""
             INSERT INTO pricing_history 
             (user_id, telegram_id, phone_model, storage, color, battery, sim_type, has_box, damage, price, is_free_trial)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (
-        user_id, telegram_id, phone_model, storage, color, battery, sim_type, has_box, damage, price, is_free_trial))
+            RETURNING id
+        """, (user_id, telegram_id, phone_model, storage, color, battery, sim_type, has_box, damage, price, is_free_trial))
 
+        pricing_id = cursor.fetchone()['id']
         conn.commit()
 
         return {
             'success': True,
-            'free_trials_left': int(updated['free_trials_left']),
-            'balance': int(updated['balance']),
+            'pricing_id': pricing_id,
             'is_free_trial': is_free_trial,
-            'message': '✅ Narx ko\'rildi' + (' (bepul)' if is_free_trial else ' (balansdan)')
+            'message': '✅ Narx tarixga qo\'shildi'
         }
 
     except Exception as e:
         conn.rollback()
-        print(f"❌ Narxlashda xato: {e}")
-        return {'success': False, 'error': 'Xatolik yuz berdi'}
+        print(f"❌ Use pricing xato: {e}")
+        return {
+            'success': False,
+            'error': str(e)
+        }
     finally:
         cursor.close()
         conn.close()
 
 
 # ============================================================
-# BALANS BOSHQARUVI
+# BALANS FUNKSIYALARI
 # ============================================================
 
 def get_user_balance(telegram_id):
@@ -460,69 +464,78 @@ def get_user_balance(telegram_id):
 
     try:
         cursor.execute("""
-            SELECT balance, free_trials_left, total_pricings
-            FROM users
+            SELECT balance, free_trials_left, total_pricings 
+            FROM users 
             WHERE telegram_id = %s
         """, (telegram_id,))
+        result = cursor.fetchone()
 
-        user = cursor.fetchone()
-
-        if user:
+        if result:
             return {
                 'success': True,
-                'balance': int(user['balance'] or 0),
-                'free_trials_left': int(user['free_trials_left'] or 0),
-                'total_pricings': int(user['total_pricings'] or 0)
+                'balance': result['balance'],
+                'free_trials_left': result['free_trials_left'],
+                'total_pricings': result['total_pricings']
             }
         else:
             return {
                 'success': False,
                 'error': 'User topilmadi',
                 'balance': 0,
-                'free_trials_left': 0
+                'free_trials_left': 0,
+                'total_pricings': 0
             }
+
     except Exception as e:
         print(f"❌ Balans olishda xato: {e}")
-        return {'success': False, 'error': str(e), 'balance': 0, 'free_trials_left': 0}
+        return {
+            'success': False,
+            'error': str(e),
+            'balance': 0,
+            'free_trials_left': 0,
+            'total_pricings': 0
+        }
     finally:
         cursor.close()
         conn.close()
 
 
-def add_balance(telegram_id, count):
-    """Balans qo'shish"""
+def add_balance(telegram_id, amount):
+    """User balansiga qo'shish"""
     conn = get_user_conn()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
-        conn.autocommit = False
-
         cursor.execute("""
             UPDATE users 
-            SET balance = balance + %s, 
+            SET balance = balance + %s,
                 updated_at = CURRENT_TIMESTAMP
             WHERE telegram_id = %s
-            RETURNING balance, free_trials_left
-        """, (count, telegram_id))
+            RETURNING balance
+        """, (amount, telegram_id))
 
-        user = cursor.fetchone()
+        result = cursor.fetchone()
+        conn.commit()
 
-        if user:
-            conn.commit()
+        if result:
             return {
                 'success': True,
-                'balance': int(user['balance']),
-                'free_trials_left': int(user['free_trials_left']),
-                'message': f'✅ {count} ta narxlash qo\'shildi'
+                'new_balance': result['balance'],
+                'message': f'✅ Balans {amount} ga oshirildi'
             }
         else:
-            conn.rollback()
-            return {'success': False, 'error': 'User topilmadi'}
+            return {
+                'success': False,
+                'error': 'User topilmadi'
+            }
 
     except Exception as e:
         conn.rollback()
-        print(f"❌ Balans qo'shishda xato: {e}")
-        return {'success': False, 'error': str(e)}
+        print(f"❌ Balans qo\'shishda xato: {e}")
+        return {
+            'success': False,
+            'error': str(e)
+        }
     finally:
         cursor.close()
         conn.close()
@@ -533,229 +546,218 @@ def add_balance(telegram_id, count):
 # ============================================================
 
 def add_payment_record(telegram_id, order_id, tariff_name, amount, count):
-    """To'lov yozuvini qo'shish"""
+    """To'lov yozuvini yaratish"""
     conn = get_user_conn()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
+        # User ID olish
         cursor.execute("SELECT id FROM users WHERE telegram_id = %s", (telegram_id,))
         user = cursor.fetchone()
 
         if not user:
-            return {'success': False, 'error': 'User topilmadi'}
+            return {
+                'success': False,
+                'error': 'User topilmadi'
+            }
 
-        user_id = user[0]
+        user_id = user['id']
 
+        # To'lov yozuvi yaratish
         cursor.execute("""
             INSERT INTO payment_history 
             (user_id, telegram_id, order_id, tariff_name, amount, count, payment_status)
             VALUES (%s, %s, %s, %s, %s, %s, 'pending')
+            RETURNING id
         """, (user_id, telegram_id, order_id, tariff_name, amount, count))
 
+        payment_id = cursor.fetchone()['id']
         conn.commit()
-        return {'success': True, 'message': '✅ To\'lov yozuvi yaratildi'}
+
+        return {
+            'success': True,
+            'payment_id': payment_id,
+            'message': 'To\'lov yozuvi yaratildi'
+        }
+
     except psycopg2.IntegrityError:
         conn.rollback()
-        return {'success': False, 'error': 'Bu order_id allaqachon mavjud'}
+        return {
+            'success': False,
+            'error': 'Bu order_id allaqachon mavjud'
+        }
     except Exception as e:
         conn.rollback()
-        print(f"❌ To'lov yozuvini qo'shishda xato: {e}")
-        return {'success': False, 'error': str(e)}
+        print(f"❌ To\'lov yozuvi yaratishda xato: {e}")
+        return {
+            'success': False,
+            'error': str(e)
+        }
     finally:
         cursor.close()
         conn.close()
 
 
-def complete_payment(order_id, count):
-    """To'lovni yakunlash"""
+def complete_payment(order_id):
+    """To'lovni tasdiqlash va balansga qo'shish"""
     conn = get_user_conn()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
-        conn.autocommit = False
-
+        # To'lov ma'lumotlarini olish
         cursor.execute("""
-            SELECT user_id, telegram_id, count, payment_status
-            FROM payment_history 
-            WHERE order_id = %s
-            FOR UPDATE
+            SELECT * FROM payment_history 
+            WHERE order_id = %s AND payment_status = 'pending'
         """, (order_id,))
 
         payment = cursor.fetchone()
 
         if not payment:
-            conn.rollback()
-            return {'success': False, 'error': 'To\'lov topilmadi'}
+            return {
+                'success': False,
+                'error': 'To\'lov topilmadi yoki allaqachon tasdiqlangan'
+            }
 
-        if payment['payment_status'] == 'completed':
-            conn.rollback()
-            return {'success': False, 'error': 'To\'lov allaqachon bajarilgan'}
+        payment_dict = dict(payment)
+        telegram_id = payment_dict['telegram_id']
+        count = payment_dict['count']
 
-        # Balansni yangilash
-        cursor.execute("""
-            UPDATE users 
-            SET balance = balance + %s, 
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = %s
-            RETURNING balance, free_trials_left
-        """, (count, payment['user_id']))
-
-        user = cursor.fetchone()
-
-        # To'lovni yakunlash
+        # To'lovni tasdiqlash
         cursor.execute("""
             UPDATE payment_history 
-            SET payment_status = 'completed', 
+            SET payment_status = 'completed',
                 completed_at = CURRENT_TIMESTAMP
             WHERE order_id = %s
         """, (order_id,))
 
+        # Balansga qo'shish
+        cursor.execute("""
+            UPDATE users 
+            SET balance = balance + %s,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE telegram_id = %s
+            RETURNING balance
+        """, (count, telegram_id))
+
+        result = cursor.fetchone()
         conn.commit()
 
-        return {
-            'success': True,
-            'balance': int(user['balance']),
-            'free_trials_left': int(user['free_trials_left']),
-            'message': f'✅ {count} ta narxlash qo\'shildi'
-        }
+        if result:
+            return {
+                'success': True,
+                'new_balance': result['balance'],
+                'added_count': count,
+                'message': f'✅ To\'lov tasdiqlandi! +{count} narxlash qo\'shildi'
+            }
+        else:
+            return {
+                'success': False,
+                'error': 'User yangilashda xato'
+            }
 
     except Exception as e:
         conn.rollback()
-        print(f"❌ To'lovni yakunlashda xato: {e}")
-        return {'success': False, 'error': str(e)}
+        print(f"❌ To\'lovni tasdiqlashda xato: {e}")
+        return {
+            'success': False,
+            'error': str(e)
+        }
     finally:
         cursor.close()
         conn.close()
 
 
 # ============================================================
-# TARIX FUNKSIYALARI
+# TARIX VA STATISTIKA
 # ============================================================
 
-def get_user_history(telegram_id, limit=10):
-    """User tarixini olish"""
+def get_user_history(telegram_id, limit=20):
+    """User narxlash tarixini olish"""
     conn = get_user_conn()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
         cursor.execute("""
-            SELECT * FROM pricing_history
-            WHERE telegram_id = %s
-            ORDER BY created_at DESC
+            SELECT * FROM pricing_history 
+            WHERE telegram_id = %s 
+            ORDER BY created_at DESC 
             LIMIT %s
         """, (telegram_id, limit))
 
         rows = cursor.fetchall()
-        return {'success': True, 'history': [dict(row) for row in rows]}
+        return {
+            'success': True,
+            'history': [dict(row) for row in rows]
+        }
+
     except Exception as e:
         print(f"❌ Tarix olishda xato: {e}")
-        return {'success': False, 'error': str(e), 'history': []}
+        return {
+            'success': False,
+            'error': str(e),
+            'history': []
+        }
     finally:
         cursor.close()
         conn.close()
 
 
-# ============================================================
-# STATISTIKA FUNKSIYALARI ⭐ YANGI!
-# ============================================================
-
 def get_users_statistics():
-    """FOYDALANUVCHILAR STATISTIKASI - Kunlik, Oylik, Jami, Aktiv"""
+    """Umumiy foydalanuvchilar statistikasi"""
     conn = get_user_conn()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
         stats = {}
 
-        # ========== 1. JAMI FOYDALANUVCHILAR ==========
-        cursor.execute("SELECT COUNT(*) as count FROM users")
+        # Jami userlar
+        cursor.execute("SELECT COUNT(*) as count FROM users WHERE is_active = TRUE")
         stats['total_users'] = cursor.fetchone()['count'] or 0
 
-        # ========== 2. JAMI AKTIV FOYDALANUVCHILAR ==========
-        cursor.execute("SELECT COUNT(*) as count FROM users WHERE is_active = TRUE")
-        stats['total_active_users'] = cursor.fetchone()['count'] or 0
-
-        # ========== 3. JAMI AKTIV EMAS FOYDALANUVCHILAR ==========
-        cursor.execute("SELECT COUNT(*) as count FROM users WHERE is_active = FALSE")
-        stats['total_inactive_users'] = cursor.fetchone()['count'] or 0
-
-        # ========== 4. BUGUNGI YANGI FOYDALANUVCHILAR ==========
+        # Bugungi userlar
         cursor.execute("""
-            SELECT COUNT(*) as count 
-            FROM users 
+            SELECT COUNT(*) as count FROM users 
             WHERE DATE(created_at) = CURRENT_DATE
         """)
-        stats['today_new_users'] = cursor.fetchone()['count'] or 0
+        stats['today_users'] = cursor.fetchone()['count'] or 0
 
-        # ========== 5. BUGUNGI AKTIV FOYDALANUVCHILAR (narxlash qilganlar) ==========
+        # Oylik userlar
         cursor.execute("""
-            SELECT COUNT(DISTINCT telegram_id) as count
-            FROM pricing_history
-            WHERE DATE(created_at) = CURRENT_DATE
-        """)
-        stats['today_active_users'] = cursor.fetchone()['count'] or 0
-
-        # ========== 6. OYLIK YANGI FOYDALANUVCHILAR ==========
-        cursor.execute("""
-            SELECT COUNT(*) as count 
-            FROM users 
+            SELECT COUNT(*) as count FROM users 
             WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)
         """)
-        stats['month_new_users'] = cursor.fetchone()['count'] or 0
+        stats['month_users'] = cursor.fetchone()['count'] or 0
 
-        # ========== 7. OYLIK AKTIV FOYDALANUVCHILAR (narxlash qilganlar) ==========
-        cursor.execute("""
-            SELECT COUNT(DISTINCT telegram_id) as count
-            FROM pricing_history
-            WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)
-        """)
-        stats['month_active_users'] = cursor.fetchone()['count'] or 0
-
-        # ========== 8. TELEFON RAQAMI BOR FOYDALANUVCHILAR ==========
-        cursor.execute("""
-            SELECT COUNT(*) as count 
-            FROM users 
-            WHERE phone_number IS NOT NULL
-        """)
-        stats['users_with_phone'] = cursor.fetchone()['count'] or 0
-
-        # ========== 9. BALANS BOR FOYDALANUVCHILAR ==========
-        cursor.execute("""
-            SELECT COUNT(*) as count 
-            FROM users 
-            WHERE balance > 0
-        """)
+        # Balans bilan userlar
+        cursor.execute("SELECT COUNT(*) as count FROM users WHERE balance > 0")
         stats['users_with_balance'] = cursor.fetchone()['count'] or 0
 
-        # ========== 10. BEPUL URINISH BOR FOYDALANUVCHILAR ==========
-        cursor.execute("""
-            SELECT COUNT(*) as count 
-            FROM users 
-            WHERE free_trials_left > 0
-        """)
+        # Bepul urinishlar bilan userlar
+        cursor.execute("SELECT COUNT(*) as count FROM users WHERE free_trials_left > 0")
         stats['users_with_free_trials'] = cursor.fetchone()['count'] or 0
 
-        # ========== 11. FOIZLAR ==========
-        if stats['total_users'] > 0:
-            stats['active_percentage'] = round((stats['total_active_users'] / stats['total_users']) * 100, 1)
-            stats['phone_percentage'] = round((stats['users_with_phone'] / stats['total_users']) * 100, 1)
-        else:
-            stats['active_percentage'] = 0
-            stats['phone_percentage'] = 0
+        # Jami narxlashlar
+        cursor.execute("SELECT COUNT(*) as count FROM pricing_history")
+        stats['total_pricings'] = cursor.fetchone()['count'] or 0
+
+        # Bugungi narxlashlar
+        cursor.execute("""
+            SELECT COUNT(*) as count FROM pricing_history 
+            WHERE DATE(created_at) = CURRENT_DATE
+        """)
+        stats['today_pricings'] = cursor.fetchone()['count'] or 0
 
         return {
             'success': True,
-            'stats': stats,
-            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            'stats': stats
         }
 
     except Exception as e:
-        print(f"❌ Foydalanuvchilar statistikasini olishda xato: {e}")
+        print(f"❌ Statistika olishda xato: {e}")
         return {
             'success': False,
             'error': str(e),
-            'stats': {},
-            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            'stats': {}
         }
     finally:
         cursor.close()
@@ -763,43 +765,36 @@ def get_users_statistics():
 
 
 def get_detailed_users_statistics():
-    """BATAFSIL FOYDALANUVCHILAR STATISTIKASI"""
+    """Batafsil user statistikasi"""
     conn = get_user_conn()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
         stats = {}
 
-        # Asosiy statistikani olish
-        basic_stats = get_users_statistics()
-        if basic_stats['success']:
-            stats.update(basic_stats['stats'])
-
-        # ========== HAFTALIK STATISTIKA ==========
+        # ========== USER STATISTIKASI ==========
         cursor.execute("""
-            SELECT COUNT(*) as count 
-            FROM users 
-            WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
+            SELECT 
+                COUNT(*) as total_users,
+                COUNT(CASE WHEN is_active = TRUE THEN 1 END) as active_users,
+                COUNT(CASE WHEN DATE(created_at) = CURRENT_DATE THEN 1 END) as today_users,
+                COUNT(CASE WHEN DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE) THEN 1 END) as month_users,
+                COUNT(CASE WHEN balance > 0 THEN 1 END) as users_with_balance,
+                COUNT(CASE WHEN free_trials_left > 0 THEN 1 END) as users_with_free_trials
+            FROM users
         """)
-        stats['week_new_users'] = cursor.fetchone()['count'] or 0
+        user_stats = cursor.fetchone()
+        stats.update(dict(user_stats))
 
-        cursor.execute("""
-            SELECT COUNT(DISTINCT telegram_id) as count
-            FROM pricing_history
-            WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
-        """)
-        stats['week_active_users'] = cursor.fetchone()['count'] or 0
-
-        # ========== TOP 10 AKTIV FOYDALANUVCHILAR ==========
+        # ========== TOP 10 USERS ==========
         cursor.execute("""
             SELECT 
                 u.telegram_id,
                 u.full_name,
                 u.username,
-                u.phone_number,
+                u.total_pricings,
                 u.balance,
                 u.free_trials_left,
-                u.total_pricings as pricing_count,
                 u.created_at
             FROM users u
             WHERE u.is_active = TRUE
@@ -969,6 +964,7 @@ def test_user_connection():
         cursor.execute("SELECT version();")
         version = cursor.fetchone()[0]
         print(f"✅ PostgreSQL user database ga muvaffaqiyatli ulandi!")
+        print(f"📊 Database: {USER_DB_CONFIG['dbname']}")
         print(f"📊 Versiya: {version}")
 
         cursor.execute("""
