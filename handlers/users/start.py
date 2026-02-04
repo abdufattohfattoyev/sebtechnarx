@@ -23,6 +23,7 @@ from keyboards.inline.payment_keyboards import (
     create_payment_inline_keyboard
 )
 from data.config import ADMINS
+from utils.misc.maintenance import get_maintenance_status, is_feature_enabled
 
 # ⭐ MAJBURIY OBUNA IMPORT
 from .subscription import (
@@ -57,8 +58,8 @@ PARTS = {
 
 TELEGRAM_CHANNEL = "https://t.me/sebtech1"
 INSTAGRAM_LINK = "https://www.instagram.com/sebtech.uz"
-CALLCENTER_1 = "+998 77 285 99 99"
-CALLCENTER_2 = "+998 91 285 99 99"
+CALL_CENTER_1 = "+998(77)-285-99-99"
+CALL_CENTER_2 = "+998(91)-285-99-99"
 
 ABOUT_TEXT = f"""✨ <b>SEPTECH</b>
 
@@ -77,12 +78,12 @@ Real savdo tajribasi + bozor tahlillari asosida ishlaydi.
 <b>Qadriyatlar:</b> Shaffoflik • Aniqlik • Ishonch
 
 📣 <b>Rasmiy sahifalar:</b>
-- Telegram: <a href="{TELEGRAM_CHANNEL}">Kanalga o'tish</a>
-- Instagram: <a href="{INSTAGRAM_LINK}">Sahifani ko'rish</a>
+- Telegram: <a href="{TELEGRAM_CHANNEL}">Telegram Kanal</a>
+- Instagram: <a href="{INSTAGRAM_LINK}">Instagram Sahifa</a>
 
 📞 <b>Call-center:</b>
-- {CALLCENTER_1}
-- {CALLCENTER_2}
+- {CALL_CENTER_1}
+- {CALL_CENTER_2}
 
 <i>SEPTECH — telefon narxining yangi standarti.</i>
 """
@@ -595,6 +596,7 @@ async def phone_state_handler(message: types.Message, state: FSMContext):
 
 
 # ================ ADMIN PANEL ================
+# ================ ADMIN PANEL ================
 @dp.message_handler(lambda m: m.text == "🔧 Admin panel" and m.from_user.id in ADMINS, state='*')
 async def admin_panel_handler(message: types.Message, state: FSMContext):
     """Admin panel"""
@@ -606,6 +608,9 @@ async def admin_panel_handler(message: types.Message, state: FSMContext):
     tariffs_result = await api.get_tariffs()
     tariffs_count = len(tariffs_result.get('tariffs', [])) if tariffs_result.get('success') else 0
 
+    # ⭐ TAMIRLASH REJIMI HOLATI
+    maintenance_status = get_maintenance_status()
+
     text = f"""<b>👨‍💼 ADMIN PANEL</b>
 
 📊 <b>Statistika:</b>
@@ -613,6 +618,8 @@ async def admin_panel_handler(message: types.Message, state: FSMContext):
 - 💰 Narxlar: {prices_count} ta
 - 💳 Tariflar: {tariffs_count} ta
 - 👥 Adminlar: {len(ADMINS)} ta
+
+🔧 <b>Tamirlash rejimi:</b> {maintenance_status}
 
 <b>🔧 Amallar:</b>
 Statistika, Tariflar, Excel import/export, Tozalash, Namuna
@@ -625,6 +632,31 @@ Statistika, Tariflar, Excel import/export, Tozalash, Namuna
 async def my_account(message: types.Message, state: FSMContext):
     """Mening hisobim"""
     await state.finish()
+
+    # ⚠️ TAMIRLASH TEKSHIRISH
+    if not is_feature_enabled('account'):
+        maintenance_text = f"""🔧 <b>TEXNIK ISHLAR</b>
+
+⚠️ <b>Hurmatli foydalanuvchi!</b>
+
+Bot hozirda texnik ishlar olib borilmoqda.
+Hisob ma'lumotlari vaqtincha ko'rsatilmaydi.
+
+⏰ <b>Ishga tushish vaqti:</b> Tez orada e'lon qilinadi
+
+📢 <b>Yangiliklar uchun:</b>
+{TELEGRAM_CHANNEL}
+
+🙏 Tushunganingiz uchun rahmat!"""
+
+        await message.answer(
+            maintenance_text,
+            reply_markup=main_menu(message.from_user.id in ADMINS),
+            parse_mode="HTML"
+        )
+        return
+
+    # ✅ ODDIY HISOB KO'RSATISH
     result = get_user_balance(message.from_user.id)
 
     if not result.get('success'):
@@ -669,6 +701,32 @@ async def back_to_menu(message: types.Message, state: FSMContext):
 @dp.message_handler(lambda m: m.text == "💰 Hisobni to'ldirish", state='*')
 async def start_payment(message: types.Message, state: FSMContext):
     """To'ldirish"""
+    await state.finish()
+
+    # ⚠️ TAMIRLASH TEKSHIRISH
+    if not is_feature_enabled('payment'):
+        maintenance_text = f"""🔧 <b>TEXNIK ISHLAR</b>
+
+⚠️ <b>Hurmatli foydalanuvchi!</b>
+
+Bot hozirda texnik ishlar olib borilmoqda.
+To'lov funksiyasi vaqtincha ishlamaydi.
+
+⏰ <b>Ishga tushish vaqti:</b> Tez orada e'lon qilinadi
+
+📢 <b>Yangiliklar uchun:</b>
+{TELEGRAM_CHANNEL}
+
+🙏 Tushunganingiz uchun rahmat!"""
+
+        await message.answer(
+            maintenance_text,
+            reply_markup=main_menu(message.from_user.id in ADMINS),
+            parse_mode="HTML"
+        )
+        return
+
+    # ✅ ODDIY TO'LOV JARAYONI
     result = await api.get_tariffs()
 
     if not result.get('success'):
@@ -808,6 +866,29 @@ async def choose_model(message: types.Message, state: FSMContext):
     """Model tanlash - MAJBURIY OBUNA BILAN"""
     await state.finish()
     user_id = message.from_user.id
+
+    # ⚠️ TAMIRLASH TEKSHIRISH
+    if not is_feature_enabled('pricing'):
+        maintenance_text = f"""🔧 <b>TEXNIK ISHLAR</b>
+
+⚠️ <b>Hurmatli foydalanuvchi!</b>
+
+Bot hozirda texnik ishlar olib borilmoqda.
+Narxlash funksiyasi vaqtincha ishlamaydi.
+
+⏰ <b>Ishga tushish vaqti:</b> Tez orada e'lon qilinadi
+
+📢 <b>Yangiliklar uchun:</b>
+{TELEGRAM_CHANNEL}
+
+🙏 Tushunganingiz uchun rahmat!"""
+
+        await message.answer(
+            maintenance_text,
+            reply_markup=main_menu(message.from_user.id in ADMINS),
+            parse_mode="HTML"
+        )
+        return
 
     # ⭐ OBUNA TEKSHIRISH (Adminlar uchun yo'q)
     if user_id not in ADMINS:

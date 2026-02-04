@@ -12,7 +12,7 @@ from aiogram.types import InputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.exceptions import RetryAfter
 
 from loader import dp, bot
-from keyboards.default.knopkalar import admin_kb, cleanup_confirm_kb
+from keyboards.default.knopkalar import admin_kb, cleanup_confirm_kb, maintenance_kb
 from data.config import ADMINS
 
 # ============================================
@@ -41,6 +41,7 @@ from utils.db_api.user_database import (
     get_all_users_count,
     get_total_pricings
 )
+from utils.misc.maintenance import get_maintenance_config, toggle_feature, is_feature_enabled, save_maintenance_config
 
 # ============================================
 # KONSTANTALAR (OPTIMIZED)
@@ -929,6 +930,132 @@ async def show_detailed_statistics(callback: types.CallbackQuery):
         await callback.answer()
 
 
+@dp.message_handler(lambda m: m.text == "🔧 Tamirlash rejimi" and m.from_user.id in ADMINS, state='*')
+async def maintenance_mode_handler(message: types.Message, state: FSMContext):
+    """Tamirlash rejimi menu"""
+    await state.finish()
+
+    config = get_maintenance_config()
+    maintenance_mode = config.get('maintenance_mode', False)
+    features = config.get('features', {})
+
+    # Holat emoji
+    pricing_emoji = "❌" if not is_feature_enabled('pricing') else "✅"
+    payment_emoji = "❌" if not is_feature_enabled('payment') else "✅"
+    account_emoji = "❌" if not is_feature_enabled('account') else "✅"
+
+    global_status = "⚠️ YOPIQ" if maintenance_mode else "✅ OCHIQ"
+
+    text = f"""🔧 <b>TAMIRLASH REJIMI</b>
+
+📊 <b>Hozirgi holat:</b> {global_status}
+
+⚙️ <b>Bo'limlar holati:</b>
+{pricing_emoji} Narxlash: {"O'chiq" if not is_feature_enabled('pricing') else "Yoniq"}
+{payment_emoji} To'lov: {"O'chiq" if not is_feature_enabled('payment') else "Yoniq"}
+{account_emoji} Hisob: {"O'chiq" if not is_feature_enabled('account') else "Yoniq"}
+
+━━━━━━━━━━━━━━━━━
+
+<b>Bo'limlarni boshqarish:</b>
+• Har bir bo'limni alohida yoqish/o'chirish mumkin
+• Yoki barchasini birdan boshqarish mumkin
+
+<b>Eslatma:</b> O'zgarishlar darhol qo'llaniladi!"""
+
+    await message.answer(text, reply_markup=maintenance_kb(), parse_mode="HTML")
+
+
+@dp.message_handler(lambda m: m.text == "🔴 Barchasini yopish" and m.from_user.id in ADMINS, state='*')
+async def close_all_features(message: types.Message, state: FSMContext):
+    """Barcha funksiyalarni yopish"""
+    config = get_maintenance_config()
+    config['maintenance_mode'] = True
+    config['updated_by'] = message.from_user.id
+
+    save_maintenance_config(config)
+
+    await message.answer(
+        "🔴 <b>Barcha funksiyalar yopildi!</b>\n\n"
+        "Foydalanuvchilar tamirlash xabarini ko'rishadi.",
+        reply_markup=maintenance_kb(),
+        parse_mode="HTML"
+    )
+
+
+@dp.message_handler(lambda m: m.text == "🟢 Barchasini ochish" and m.from_user.id in ADMINS, state='*')
+async def open_all_features(message: types.Message, state: FSMContext):
+    """Barcha funksiyalarni ochish"""
+    config = get_maintenance_config()
+    config['maintenance_mode'] = False
+    config['features'] = {
+        'pricing': True,
+        'payment': True,
+        'account': True
+    }
+    config['updated_by'] = message.from_user.id
+
+    save_maintenance_config(config)
+
+    await message.answer(
+        "🟢 <b>Barcha funksiyalar ochildi!</b>\n\n"
+        "Bot normal ishlashda.",
+        reply_markup=maintenance_kb(),
+        parse_mode="HTML"
+    )
+
+
+@dp.message_handler(lambda m: m.text in ["📱 Narxlash", "💰 To'lov", "👤 Hisob"] and m.from_user.id in ADMINS, state='*')
+async def toggle_single_feature(message: types.Message, state: FSMContext):
+    """Alohida funksiyani yoqish/o'chirish"""
+    feature_map = {
+        "📱 Narxlash": "pricing",
+        "💰 To'lov": "payment",
+        "👤 Hisob": "account"
+    }
+
+    feature = feature_map.get(message.text)
+    if not feature:
+        return
+
+    result = toggle_feature(feature, message.from_user.id)
+
+    await message.answer(
+        result['message'],
+        reply_markup=maintenance_kb(),
+        parse_mode="HTML"
+    )
+
+
+@dp.message_handler(lambda m: m.text == "📊 Holat" and m.from_user.id in ADMINS, state='*')
+async def show_maintenance_status(message: types.Message, state: FSMContext):
+    """Tamirlash rejimi holatini ko'rsatish"""
+    config = get_maintenance_config()
+    maintenance_mode = config.get('maintenance_mode', False)
+    features = config.get('features', {})
+    updated_at = config.get('updated_at', 'Noma\'lum')
+    updated_by = config.get('updated_by', 'Noma\'lum')
+
+    pricing_status = "✅ Ishlaydi" if is_feature_enabled('pricing') else "❌ Yopiq"
+    payment_status = "✅ Ishlaydi" if is_feature_enabled('payment') else "❌ Yopiq"
+    account_status = "✅ Ishlaydi" if is_feature_enabled('account') else "❌ Yopiq"
+
+    global_status = "⚠️ TO'LIQ TAMIRLASH" if maintenance_mode else "✅ NORMAL"
+
+    text = f"""📊 <b>TAMIRLASH REJIMI HOLATI</b>
+
+🔧 <b>Global holat:</b> {global_status}
+
+📱 <b>Narxlash:</b> {pricing_status}
+💰 <b>To'lov:</b> {payment_status}
+👤 <b>Hisob:</b> {account_status}
+
+━━━━━━━━━━━━━━━━━
+
+⏰ <b>Oxirgi yangilash:</b> {updated_at}
+👤 <b>Kim tomonidan:</b> {updated_by if updated_by != 'Nomalum' else 'Nomalum'}"""
+
+    await message.answer(text, reply_markup=maintenance_kb(), parse_mode="HTML")
 # ============================================
 # BEKOR QILISH
 # ============================================

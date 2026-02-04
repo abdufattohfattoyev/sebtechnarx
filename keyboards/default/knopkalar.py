@@ -151,7 +151,6 @@ def create_parts_inline_kb(selected_parts, parts_dict):
 # ================ ADMIN KLAVIATURALARI ================
 
 def admin_kb():
-    """Admin panel - TARTIBLI"""
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
 
     # Birinchi qator - Statistika va Ma'lumotlar
@@ -163,7 +162,7 @@ def admin_kb():
     # Ikkinchi qator - Import va Export
     kb.row(
         KeyboardButton("📥 Narxlarni import qilish"),
-        KeyboardButton(text="📣 Reklama")
+        KeyboardButton("📢 Reklama")
     )
 
     # Uchinchi qator - Qo'shimcha funksiyalar
@@ -172,8 +171,35 @@ def admin_kb():
         KeyboardButton("🗑 Narxlarni tozalash")
     )
 
-    # To'rtinchi qator - Orqaga
+    # To'rtinchi qator - TAMIRLASH REJIMI (YANGI!)
+    kb.row(KeyboardButton("🔧 Tamirlash rejimi"))
+
+    # Beshinchi qator - Orqaga
     kb.row(KeyboardButton("🏠 Bosh menyu"))
+
+    return kb
+
+
+def maintenance_kb():
+    """Tamirlash rejimi menu"""
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+
+    # Birinchi qator - Asosiy boshqaruv
+    kb.row(KeyboardButton("🔴 Barchasini yopish"))
+    kb.row(KeyboardButton("🟢 Barchasini ochish"))
+
+    # Ikkinchi qator - Bo'limlar
+    kb.row(
+        KeyboardButton("📱 Narxlash"),
+        KeyboardButton("💰 To'lov")
+    )
+    kb.row(
+        KeyboardButton("👤 Hisob"),
+        KeyboardButton("📊 Holat")
+    )
+
+    # Uchinchi qator - Orqaga
+    kb.row(KeyboardButton("◀️ Orqaga"))
 
     return kb
 

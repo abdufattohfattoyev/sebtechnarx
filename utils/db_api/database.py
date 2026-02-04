@@ -285,7 +285,7 @@ def init_db():
 
         # ⚠️ VACUUM alohida autocommit connection da ishlaydi
         try:
-            conn_vacuum = psycopg2.connect(**DB_CONFIG)
+            conn_vacuum = psycopg2.connect(**PHONE_DB_CONFIG)
             conn_vacuum.autocommit = True
             cursor_vacuum = conn_vacuum.cursor()
             cursor_vacuum.execute("VACUUM")

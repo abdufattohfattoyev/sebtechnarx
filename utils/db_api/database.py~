@@ -21,7 +21,7 @@ PHONE_DB_CONFIG = {
 def get_conn():
     """PostgreSQL database ulanishini yaratish"""
     try:
-        conn = psycopg2.connect(**DB_CONFIG)
+        conn = psycopg2.connect(**PHONE_DB_CONFIG)
         return conn
     except Exception as e:
         print(f"❌ Database ga ulanishda xato: {e}")

@@ -1,3 +1,4 @@
+# handlers/admin.py - TO'LIQ VERSIYA (AIOGRAM 2.25.2)
 import os
 import re
 import asyncio
@@ -7,7 +8,7 @@ import pandas as pd
 from aiogram import types
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.types import InputFile
+from aiogram.types import InputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.exceptions import RetryAfter
 
 from loader import dp, bot
@@ -15,7 +16,7 @@ from keyboards.default.knopkalar import admin_kb, cleanup_confirm_kb
 from data.config import ADMINS
 
 # ============================================
-# POSTGRESQL IMPORT
+# POSTGRESQL IMPORT - PHONE DATABASE
 # ============================================
 from utils.db_api.database import (
     get_models, get_model, add_model,
@@ -29,6 +30,16 @@ from utils.db_api.database import (
     get_total_prices_count,
     normalize_damage_format,
     get_conn
+)
+
+# ============================================
+# USER DATABASE IMPORT
+# ============================================
+from utils.db_api.user_database import (
+    get_users_statistics,
+    get_detailed_users_statistics,
+    get_all_users_count,
+    get_total_pricings
 )
 
 # ============================================
@@ -149,7 +160,7 @@ def detect_columns(df_columns):
 
 
 # ============================================
-# BULK INSERT FUNKSIYASI (TEZKOR) - TO'G'RILANDI
+# BULK INSERT FUNKSIYASI (TEZKOR)
 # ============================================
 
 def bulk_insert_prices(prices_batch):
@@ -164,7 +175,7 @@ def bulk_insert_prices(prices_batch):
         conn = get_conn()
         cursor = conn.cursor()
 
-        # VALUES qismini tayyorlash (to'g'ri ustun nomlari bilan)
+        # VALUES qismini tayyorlash
         values_list = []
         for item in prices_batch:
             values_list.append(
@@ -182,7 +193,7 @@ def bulk_insert_prices(prices_batch):
 
         values_str = ','.join(values_list)
 
-        # Bir SQL bilan hammасini qo'shish (to'g'ri ustun nomlari)
+        # Bir SQL bilan hammасini qo'shish
         query = f"""
             INSERT INTO prices 
             (model_id, storage_size, color_name, sim_type, battery_label, 
@@ -263,13 +274,12 @@ async def process_import(message: types.Message, state: FSMContext):
 
     try:
         # ============================================
-        # 2. FAYLNI YUKLAB OLISH (TIMEOUT BILAN)
+        # 2. FAYLNI YUKLAB OLISH
         # ============================================
         try:
-            # 5 daqiqalik timeout
             await asyncio.wait_for(
                 message.document.download(destination_file=file_path),
-                timeout=300.0  # 5 minut
+                timeout=300.0
             )
         except asyncio.TimeoutError:
             await message.answer("❌ Fayl yuklanish vaqti tugadi (5 min). Kichikroq fayl yuboring!")
@@ -281,10 +291,9 @@ async def process_import(message: types.Message, state: FSMContext):
         await safe_edit_message(progress_msg, "📊 O'qilmoqda...")
 
         # ============================================
-        # 3. EXCEL NI O'QISH (OPTIMIZED)
+        # 3. EXCEL NI O'QISH
         # ============================================
         try:
-            # Faqat kerakli ustunlarni o'qish (tezroq)
             df = pd.read_excel(file_path, dtype=str, engine='openpyxl')
             df.columns = [str(c).strip() for c in df.columns]
         except Exception as e:
@@ -320,13 +329,12 @@ async def process_import(message: types.Message, state: FSMContext):
         )
 
         # ============================================
-        # 5. MA'LUMOTLARNI TAYYORLASH (OPTIMIZED)
+        # 5. MA'LUMOTLARNI TAYYORLASH
         # ============================================
         models_to_add = set()
         prices_data = []
         skipped = 0
 
-        # Pandas apply yordamida tezroq ishlash
         for index, row in df.iterrows():
             model_name = get_cell_value(row, col_map['model'])
             if not model_name:
@@ -375,29 +383,26 @@ async def process_import(message: types.Message, state: FSMContext):
             return
 
         # ============================================
-        # 6. MODELLAR VA BOG'LIQ JADVALLARNI TO'LDIRISH
+        # 6. MODELLAR VA PARAMETRLARNI QO'SHISH
         # ============================================
         await safe_edit_message(
             progress_msg,
-            f"📱 <b>Modellar va parametrlar qo'shilmoqda...</b>\n"
+            f"📱 <b>Modellar qo'shilmoqda...</b>\n"
             f"📊 {len(models_to_add)} ta model",
             parse_mode="HTML"
         )
 
-        # Barcha modellarni bir vaqtda qo'shish
         model_ids = {}
-
-        # Unique parametrlarni yig'ish
-        unique_storages = {}  # model_id: set(storages)
-        unique_colors = {}  # model_id: set(colors)
-        unique_batteries = {}  # model_id: set(batteries)
-        unique_sim_types = {}  # model_id: set(sim_types)
+        unique_storages = {}
+        unique_colors = {}
+        unique_batteries = {}
+        unique_sim_types = {}
 
         try:
             conn = get_conn()
             cursor = conn.cursor()
 
-            # 1. Modellarni qo'shish
+            # Modellarni qo'shish
             for model_name in models_to_add:
                 cursor.execute(
                     "INSERT INTO models (name) VALUES (%s) ON CONFLICT (name) DO NOTHING RETURNING id",
@@ -412,7 +417,7 @@ async def process_import(message: types.Message, state: FSMContext):
 
             conn.commit()
 
-            # 2. Har bir model uchun parametrlarni yig'ish
+            # Parametrlarni yig'ish
             for item in prices_data:
                 model_name = item['model']
                 model_id = model_ids.get(model_name)
@@ -420,28 +425,24 @@ async def process_import(message: types.Message, state: FSMContext):
                 if not model_id:
                     continue
 
-                # Storages
                 if model_id not in unique_storages:
                     unique_storages[model_id] = set()
                 unique_storages[model_id].add(item['storage'])
 
-                # Colors
                 if model_id not in unique_colors:
                     unique_colors[model_id] = set()
                 if item['color']:
                     unique_colors[model_id].add(item['color'])
 
-                # Batteries
                 if model_id not in unique_batteries:
                     unique_batteries[model_id] = set()
                 unique_batteries[model_id].add(item['battery'])
 
-                # SIM types
                 if model_id not in unique_sim_types:
                     unique_sim_types[model_id] = set()
                 unique_sim_types[model_id].add(item['sim'])
 
-            # 3. Storages qo'shish
+            # Parametrlarni qo'shish
             for model_id, storages in unique_storages.items():
                 for storage in storages:
                     cursor.execute(
@@ -449,7 +450,6 @@ async def process_import(message: types.Message, state: FSMContext):
                         (model_id, storage)
                     )
 
-            # 4. Colors qo'shish
             for model_id, colors in unique_colors.items():
                 for color in colors:
                     cursor.execute(
@@ -457,7 +457,6 @@ async def process_import(message: types.Message, state: FSMContext):
                         (model_id, color)
                     )
 
-            # 5. Batteries qo'shish
             for model_id, batteries in unique_batteries.items():
                 for battery in batteries:
                     cursor.execute(
@@ -465,7 +464,6 @@ async def process_import(message: types.Message, state: FSMContext):
                         (model_id, battery)
                     )
 
-            # 6. SIM types qo'shish
             for model_id, sim_types in unique_sim_types.items():
                 for sim_type in sim_types:
                     cursor.execute(
@@ -478,11 +476,11 @@ async def process_import(message: types.Message, state: FSMContext):
             conn.close()
 
         except Exception as e:
-            print(f"Models/params bulk insert error: {e}")
+            print(f"Models/params error: {e}")
             conn.rollback()
 
         # ============================================
-        # 7. NARXLARNI BULK INSERT (SUPER TEZKOR!)
+        # 7. NARXLARNI BULK INSERT
         # ============================================
         await safe_edit_message(
             progress_msg,
@@ -495,8 +493,6 @@ async def process_import(message: types.Message, state: FSMContext):
         success_count = 0
         error_count = 0
         last_update_time = datetime.now()
-
-        # Ma'lumotlarni bulk insert uchun tayyorlash (to'g'ri ustun nomlari bilan)
         bulk_batch = []
 
         for i, item in enumerate(prices_data):
@@ -505,7 +501,6 @@ async def process_import(message: types.Message, state: FSMContext):
                 error_count += 1
                 continue
 
-            # Damage ni normallashtirish
             damage_normalized = item['damage']
             if not damage_normalized or damage_normalized.lower() in ['yangi', 'nan', 'none']:
                 damage_normalized = "Yangi"
@@ -514,44 +509,40 @@ async def process_import(message: types.Message, state: FSMContext):
 
             bulk_batch.append({
                 'model_id': model_id,
-                'storage_size': item['storage'].replace("'", "''"),  # SQL injection himoya
+                'storage_size': item['storage'].replace("'", "''"),
                 'color_name': item['color'].replace("'", "''"),
                 'sim_type': item['sim'],
                 'battery_label': item['battery'].replace("'", "''"),
-                'has_box': 'TRUE' if item['box'] else 'FALSE',  # PostgreSQL boolean
+                'has_box': 'TRUE' if item['box'] else 'FALSE',
                 'damage_pct': damage_normalized.replace("'", "''"),
                 'price': item['price']
             })
 
-            # Batch to'lganda yoki oxirgi element bo'lsa yuklash
             if len(bulk_batch) >= BATCH_SIZE or i == len(prices_data) - 1:
-                # DUBLIKATLARNI TOZALASH (kalit bo'yicha)
+                # Dublikatlarni tozalash
                 unique_batch = []
                 seen_keys = set()
 
-                for item in bulk_batch:
-                    # Unique kalit yaratish
+                for batch_item in bulk_batch:
                     key = (
-                        item['model_id'],
-                        item['storage_size'],
-                        item['color_name'],
-                        item['sim_type'],
-                        item['battery_label'],
-                        item['has_box'],
-                        item['damage_pct']
+                        batch_item['model_id'],
+                        batch_item['storage_size'],
+                        batch_item['color_name'],
+                        batch_item['sim_type'],
+                        batch_item['battery_label'],
+                        batch_item['has_box'],
+                        batch_item['damage_pct']
                     )
 
-                    # Agar bu kalit ilgari ko'rilmagan bo'lsa
                     if key not in seen_keys:
                         seen_keys.add(key)
-                        unique_batch.append(item)
+                        unique_batch.append(batch_item)
 
-                # Faqat unique yozuvlarni yuklash
                 if unique_batch:
                     inserted = bulk_insert_prices(unique_batch)
                     success_count += inserted
 
-                # Progress yangilash (kamroq tez-tez)
+                # Progress yangilash
                 now = datetime.now()
                 if (i % PROGRESS_UPDATE_INTERVAL == 0) or i == len(prices_data) - 1:
                     elapsed = (now - start_time).total_seconds()
@@ -572,7 +563,7 @@ async def process_import(message: types.Message, state: FSMContext):
                     )
                     last_update_time = now
 
-                bulk_batch = []  # Batch ni tozalash
+                bulk_batch = []
 
         # ============================================
         # 8. YAKUNIY NATIJA
@@ -657,13 +648,37 @@ async def cleanup_confirm(message: types.Message, state: FSMContext):
 
 
 # ============================================
-# STATISTIKA
+# STATISTIKA MENU - YANGI!
 # ============================================
 
 @dp.message_handler(lambda msg: msg.text == "📊 Statistika", user_id=ADMINS)
-async def show_statistics(message: types.Message):
-    """Bazaning statistikasini ko'rsatish"""
+async def show_statistics_menu(message: types.Message):
+    """Statistika menu - faqat adminlar uchun"""
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton(text="🗄️ Database", callback_data="stats_database"),
+        InlineKeyboardButton(text="👥 Foydalanuvchilar", callback_data="stats_users")
+    )
+    keyboard.add(
+        InlineKeyboardButton(text="📊 To'liq", callback_data="stats_full"),
+        InlineKeyboardButton(text="📈 Batafsil", callback_data="stats_detailed")
+    )
 
+    await message.answer(
+        "📊 <b>STATISTIKA MENU</b>\n\n"
+        "Qaysi statistikani ko'rmoqchisiz?",
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+
+
+# ============================================
+# DATABASE STATISTIKASI
+# ============================================
+
+@dp.callback_query_handler(lambda c: c.data == "stats_database", user_id=ADMINS)
+async def show_database_statistics(callback: types.CallbackQuery):
+    """Database statistikasi"""
     try:
         total_prices = get_total_prices_count()
         models = get_models()
@@ -671,9 +686,8 @@ async def show_statistics(message: types.Message):
 
         conn = get_conn()
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT pg_size_pretty(pg_database_size(current_database()))
-        """)
+
+        cursor.execute("SELECT pg_size_pretty(pg_database_size(current_database()))")
         db_size = cursor.fetchone()[0]
 
         cursor.execute("""
@@ -688,25 +702,231 @@ async def show_statistics(message: types.Message):
         """)
         top_tables = cursor.fetchall()
 
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM pg_indexes 
+            WHERE schemaname = 'public'
+        """)
+        total_indexes = cursor.fetchone()[0]
+
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_connections,
+                COUNT(*) FILTER (WHERE state = 'active') as active_connections,
+                COUNT(*) FILTER (WHERE state = 'idle') as idle_connections
+            FROM pg_stat_activity
+            WHERE datname = current_database()
+        """)
+        conn_stats = cursor.fetchone()
+
         cursor.close()
         conn.close()
 
         text = (
-            f"📊 <b>DATABASE STATISTIKASI</b>\n\n"
-            f"🗄️ <b>Database:</b> PostgreSQL\n"
-            f"💾 <b>Hajm:</b> {db_size}\n\n"
-            f"📱 <b>Modellar:</b> {total_models}\n"
-            f"💰 <b>Narxlar:</b> {total_prices:,}\n\n"
-            f"<b>Top 5 jadvallar:</b>\n"
+            f"🗄️ <b>DATABASE STATISTIKASI</b>\n\n"
+            f"<b>PostgreSQL phones_db</b>\n"
+            f"💾 Hajm: {db_size}\n"
+            f"🔧 Indekslar: {total_indexes}\n\n"
+            f"<b>📊 Ma'lumotlar:</b>\n"
+            f"📱 Modellar: {total_models}\n"
+            f"💰 Narxlar: {total_prices:,}\n\n"
+            f"<b>🔌 Ulanishlar:</b>\n"
+            f"  • Jami: {conn_stats[0]}\n"
+            f"  • Aktiv: {conn_stats[1]}\n"
+            f"  • Idle: {conn_stats[2]}\n\n"
+            f"<b>📋 Top 5 jadvallar:</b>\n"
         )
 
         for schema, table, size in top_tables:
-            text += f"  • {table}: {size}\n"
+            text += f"  • <code>{table}</code>: {size}\n"
 
-        await message.answer(text, parse_mode="HTML")
+        await callback.message.edit_text(text, parse_mode="HTML")
+        await callback.answer()
 
     except Exception as e:
-        await message.answer(f"❌ Statistika olishda xato: {e}")
+        await callback.message.edit_text(f"❌ Xato: {e}")
+        await callback.answer()
+
+
+# ============================================
+# FOYDALANUVCHILAR STATISTIKASI
+# ============================================
+
+@dp.callback_query_handler(lambda c: c.data == "stats_users", user_id=ADMINS)
+async def show_users_statistics(callback: types.CallbackQuery):
+    """Foydalanuvchilar statistikasi"""
+    try:
+        result = get_users_statistics()
+
+        if not result['success']:
+            await callback.message.edit_text(f"❌ Xato: {result.get('error')}")
+            await callback.answer()
+            return
+
+        stats = result['stats']
+
+        text = (
+            f"👥 <b>FOYDALANUVCHILAR STATISTIKASI</b>\n\n"
+            f"<b>📊 JAMI:</b>\n"
+            f"  • Jami: {stats['total_users']:,}\n"
+            f"  • Aktiv: {stats['total_active_users']:,} ({stats['active_percentage']}%)\n"
+            f"  • Aktiv emas: {stats['total_inactive_users']:,}\n\n"
+            f"<b>📅 BUGUNGI:</b>\n"
+            f"  • Yangi userlar: {stats['today_new_users']}\n"
+            f"  • Aktiv userlar: {stats['today_active_users']}\n\n"
+            f"<b>📆 OYLIK:</b>\n"
+            f"  • Yangi userlar: {stats['month_new_users']:,}\n"
+            f"  • Aktiv userlar: {stats['month_active_users']:,}\n\n"
+            f"<b>📱 QO'SHIMCHA:</b>\n"
+            f"  • Telefon bor: {stats['users_with_phone']:,} ({stats['phone_percentage']}%)\n"
+            f"  • Balans bor: {stats['users_with_balance']:,}\n"
+            f"  • Bepul urinish bor: {stats['users_with_free_trials']:,}\n\n"
+            f"⏰ <i>{result['timestamp']}</i>"
+        )
+
+        await callback.message.edit_text(text, parse_mode="HTML")
+        await callback.answer()
+
+    except Exception as e:
+        await callback.message.edit_text(f"❌ Xato: {e}")
+        await callback.answer()
+
+
+# ============================================
+# TO'LIQ STATISTIKA
+# ============================================
+
+@dp.callback_query_handler(lambda c: c.data == "stats_full", user_id=ADMINS)
+async def show_full_statistics(callback: types.CallbackQuery):
+    """To'liq statistika"""
+    try:
+        # Database
+        total_prices = get_total_prices_count()
+        models = get_models()
+        total_models = len(models)
+
+        conn = get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT pg_size_pretty(pg_database_size(current_database()))")
+        db_size = cursor.fetchone()[0]
+        cursor.close()
+        conn.close()
+
+        # Users
+        user_result = get_users_statistics()
+        user_stats = user_result['stats'] if user_result['success'] else {}
+
+        total_pricings = get_total_pricings()
+
+        text = (
+            f"📊 <b>TO'LIQ STATISTIKA</b>\n\n"
+            f"<b>🗄️ DATABASE:</b>\n"
+            f"  💾 Hajm: {db_size}\n"
+            f"  📱 Modellar: {total_models}\n"
+            f"  💰 Narxlar: {total_prices:,}\n\n"
+            f"<b>👥 FOYDALANUVCHILAR:</b>\n"
+            f"  • Jami: {user_stats.get('total_users', 0):,}\n"
+            f"  • Aktiv: {user_stats.get('total_active_users', 0):,}\n"
+            f"  • Bugungi yangi: {user_stats.get('today_new_users', 0)}\n"
+            f"  • Oylik yangi: {user_stats.get('month_new_users', 0):,}\n\n"
+            f"<b>📊 NARXLASHLAR:</b>\n"
+            f"  • Jami: {total_pricings:,}\n"
+            f"  • Bugungi aktiv: {user_stats.get('today_active_users', 0)}\n"
+            f"  • Oylik aktiv: {user_stats.get('month_active_users', 0):,}\n\n"
+            f"<b>💰 BALANS:</b>\n"
+            f"  • Balans bor: {user_stats.get('users_with_balance', 0):,}\n"
+            f"  • Bepul urinish bor: {user_stats.get('users_with_free_trials', 0):,}\n"
+            f"  • Telefon bor: {user_stats.get('users_with_phone', 0):,}\n\n"
+            f"⏰ <i>{user_result.get('timestamp', '')}</i>"
+        )
+
+        await callback.message.edit_text(text, parse_mode="HTML")
+        await callback.answer()
+
+    except Exception as e:
+        await callback.message.edit_text(f"❌ Xato: {e}")
+        await callback.answer()
+
+
+# ============================================
+# BATAFSIL STATISTIKA
+# ============================================
+
+@dp.callback_query_handler(lambda c: c.data == "stats_detailed", user_id=ADMINS)
+async def show_detailed_statistics(callback: types.CallbackQuery):
+    """Batafsil statistika"""
+    try:
+        result = get_detailed_users_statistics()
+
+        if not result['success']:
+            await callback.message.edit_text(f"❌ Xato: {result.get('error')}")
+            await callback.answer()
+            return
+
+        stats = result['stats']
+
+        # 1-xabar - Asosiy
+        text1 = (
+            f"📈 <b>BATAFSIL STATISTIKA</b>\n\n"
+            f"<b>👥 FOYDALANUVCHILAR:</b>\n"
+            f"  • Jami: {stats['total_users']:,}\n"
+            f"  • Aktiv: {stats['total_active_users']:,} ({stats['active_percentage']}%)\n"
+            f"  • Bugungi: {stats['today_new_users']}\n"
+            f"  • Haftalik: {stats['week_new_users']:,}\n"
+            f"  • Oylik: {stats['month_new_users']:,}\n\n"
+            f"<b>📊 NARXLASHLAR:</b>\n"
+            f"  • Jami: {stats['total_pricings']:,}\n"
+            f"  • Bugungi: {stats['today_pricings']}\n"
+            f"  • Oylik: {stats['month_pricings']:,}\n"
+            f"  • Bepul: {stats['free_pricings']:,}\n"
+            f"  • Pullik: {stats['paid_pricings']:,}\n\n"
+            f"<b>💰 BALANS:</b>\n"
+            f"  • Umumiy balans: {stats['total_balance']:,}\n"
+            f"  • Umumiy bepul: {stats['total_free_trials']:,}\n\n"
+            f"<b>💳 TO'LOVLAR:</b>\n"
+            f"  • Jami: {stats['total_payments']}\n"
+            f"  • Yakunlangan: {stats['completed_payments']}\n"
+            f"  • Kutilayotgan: {stats['pending_payments']}\n"
+            f"  • Summa: ${stats['total_paid_amount']:,.2f}"
+        )
+
+        await callback.message.edit_text(text1, parse_mode="HTML")
+
+        # 2-xabar - Top userlar
+        if stats.get('top_users'):
+            text2 = "<b>🏆 TOP 5 AKTIV FOYDALANUVCHILAR:</b>\n\n"
+            for i, user in enumerate(stats['top_users'][:5], 1):
+                name = user['full_name'][:20]
+                username = f"@{user['username']}" if user['username'] else ""
+                text2 += (
+                    f"{i}. <b>{name}</b> {username}\n"
+                    f"   📊 Narxlashlar: {user['pricing_count']}\n"
+                    f"   💰 Balans: {user['balance']}\n"
+                    f"   🎁 Bepul: {user['free_trials_left']}\n\n"
+                )
+            await callback.message.answer(text2, parse_mode="HTML")
+
+        # 3-xabar - Top telefonlar
+        if stats.get('top_phone_models'):
+            text3 = "<b>📱 TOP 5 TELEFON MODELLARI:</b>\n\n"
+            for i, phone in enumerate(stats['top_phone_models'][:5], 1):
+                text3 += f"{i}. <code>{phone['phone_model']}</code>\n"
+                text3 += f"   Narxlashlar: {phone['count']}\n\n"
+            await callback.message.answer(text3, parse_mode="HTML")
+
+        # 4-xabar - Trend
+        if stats.get('daily_trend'):
+            text4 = "<b>📅 KUNLIK TREND (oxirgi 7 kun):</b>\n\n"
+            for day in stats['daily_trend']:
+                text4 += f"📆 {day['date']}: <b>{day['new_users']}</b> ta yangi user\n"
+            text4 += f"\n⏰ <i>{result['timestamp']}</i>"
+            await callback.message.answer(text4, parse_mode="HTML")
+
+        await callback.answer()
+
+    except Exception as e:
+        await callback.message.edit_text(f"❌ Xato: {e}")
+        await callback.answer()
 
 
 # ============================================
