@@ -647,7 +647,7 @@ Hisob ma'lumotlari vaqtincha ko'rsatilmaydi.
 📢 <b>Yangiliklar uchun:</b>
 {TELEGRAM_CHANNEL}
 
-🙏 Tushunganingiz uchun rahmat!"""
+Tushunganingiz uchun rahmat!"""
 
         await message.answer(
             maintenance_text,

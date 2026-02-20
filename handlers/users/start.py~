@@ -867,6 +867,29 @@ async def choose_model(message: types.Message, state: FSMContext):
     await state.finish()
     user_id = message.from_user.id
 
+    # ⚠️ TAMIRLASH TEKSHIRISH
+    if not is_feature_enabled('pricing'):
+        maintenance_text = f"""🔧 <b>TEXNIK ISHLAR</b>
+
+⚠️ <b>Hurmatli foydalanuvchi!</b>
+
+Bot hozirda texnik ishlar olib borilmoqda.
+Narxlash funksiyasi vaqtincha ishlamaydi.
+
+⏰ <b>Ishga tushish vaqti:</b> Tez orada e'lon qilinadi
+
+📢 <b>Yangiliklar uchun:</b>
+{TELEGRAM_CHANNEL}
+
+🙏 Tushunganingiz uchun rahmat!"""
+
+        await message.answer(
+            maintenance_text,
+            reply_markup=main_menu(message.from_user.id in ADMINS),
+            parse_mode="HTML"
+        )
+        return
+
     # ⭐ OBUNA TEKSHIRISH (Adminlar uchun yo'q)
     if user_id not in ADMINS:
         is_subscribed = await check_subscription(user_id)

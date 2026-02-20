@@ -1,8 +1,7 @@
-# docker-compose.yml - TO'LIQ VERSIYA
+# docker-compose.yml - XAVFSIZ VERSIYA
 version: '3.8'
 
 services:
-  # PostgreSQL Database
   db:
     image: postgres:16-alpine
     container_name: sebtech_postgres
@@ -15,8 +14,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backups:/backups
-    ports:
-      - "5432:5432"
+    # ports YO'Q - tashqaridan kirish mumkin emas!
     networks:
       - bot_network
     healthcheck:
@@ -26,7 +24,6 @@ services:
       retries: 20
       start_period: 10s
 
-  # Telegram Bot
   bot:
     build:
       context: .
