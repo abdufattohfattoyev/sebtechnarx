@@ -22,7 +22,7 @@ from keyboards.inline.payment_keyboards import (
     create_tariffs_inline_keyboard,
     create_payment_inline_keyboard
 )
-from data.config import ADMINS
+from data.config import ADMINS, FREE_TRIALS_DEFAULT
 from utils.misc.maintenance import get_maintenance_status, is_feature_enabled
 
 # ⭐ MAJBURIY OBUNA IMPORT
@@ -39,7 +39,9 @@ from utils.db_api.user_database import (
     check_can_price,
     create_user,
     get_user_balance,
-    use_pricing as use_pricing_local, update_phone_number
+    use_pricing as use_pricing_local,
+    update_phone_number,
+    get_user_payment_history,
 )
 
 # ================ CONSTANTS ================
@@ -306,13 +308,13 @@ async def start(message: types.Message, state: FSMContext):
         api_balance = int(api_result.get('balance', 0))
 
         # Local dan bepul urinishlarni olish
-        free_trials = 3  # Default
+        free_trials = FREE_TRIALS_DEFAULT  # Default
         local_balance = 0
 
         try:
             local_data = get_user_balance(user.id)
             if local_data.get('success'):
-                free_trials = int(local_data.get('free_trials_left', 3))
+                free_trials = int(local_data.get('free_trials_left', FREE_TRIALS_DEFAULT))
                 local_balance = int(local_data.get('balance', 0))
         except Exception as e:
             logger.warning(f"Failed to get local balance: {e}")
@@ -443,13 +445,13 @@ async def check_subscription_callback(call: types.CallbackQuery, state: FSMConte
             phone = api_result.get('phone')
             api_balance = int(api_result.get('balance', 0))
 
-            free_trials = 3
+            free_trials = FREE_TRIALS_DEFAULT
             local_balance = 0
 
             try:
                 local_data = get_user_balance(user.id)
                 if local_data.get('success'):
-                    free_trials = int(local_data.get('free_trials_left', 3))
+                    free_trials = int(local_data.get('free_trials_left', FREE_TRIALS_DEFAULT))
                     local_balance = int(local_data.get('balance', 0))
             except:
                 pass
@@ -562,9 +564,9 @@ async def receive_phone(message: types.Message, state: FSMContext):
 
     try:
         local_data = get_user_balance(message.from_user.id)
-        free_trials = local_data.get('free_trials_left', 3)
+        free_trials = local_data.get('free_trials_left', FREE_TRIALS_DEFAULT)
     except:
-        free_trials = 3
+        free_trials = FREE_TRIALS_DEFAULT
 
     try:
         models = get_models()
@@ -685,6 +687,16 @@ Tushunganingiz uchun rahmat!"""
         text += f"\n🎁 {free_trials} ta bepul urinish!"
     else:
         text += "\n⚠️ Balans yetarli emas!\n💳 Hisobni to'ldiring."
+
+    # So'nggi to'lovlar
+    pay_result = get_user_payment_history(message.from_user.id, limit=3)
+    payments = pay_result.get('payments', [])
+    if payments:
+        text += "\n\n💳 <b>So'nggi to'lovlar:</b>\n"
+        for p in payments:
+            status_icon = "✅" if p['payment_status'] == 'completed' else "⏳"
+            date = str(p['created_at'])[:10]
+            text += f"{status_icon} {p['tariff_name']} — {int(p['amount']):,} so'm ({date})\n"
 
     await message.answer(text, reply_markup=balance_menu_kb(), parse_mode="HTML")
 
@@ -910,7 +922,7 @@ Narxlash funksiyasi vaqtincha ishlamaydi.
 
 📝 Iltimos, botni ishga tushirish uchun /start bosing.
 
-🎁 Ro'yxatdan o'tganingizda <b>3 ta bepul urinish</b> olasiz!"""
+🎁 Ro'yxatdan o'tganingizda <b>{FREE_TRIALS_DEFAULT} ta bepul urinish</b> olasiz!"""
 
         from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
         kb = ReplyKeyboardMarkup(resize_keyboard=True)
@@ -1112,6 +1124,7 @@ async def battery_selected(message: types.Message, state: FSMContext):
     model_name = data.get('model_name', '')
 
     if should_ask_sim_type(model_name):
+        await state.update_data(sim_step_shown=True)
         from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
         kb = ReplyKeyboardMarkup(resize_keyboard=True)
         kb.row(KeyboardButton("📱 SIM karta"), KeyboardButton("📲 eSIM"))
@@ -1119,6 +1132,7 @@ async def battery_selected(message: types.Message, state: FSMContext):
         await message.answer("<b>📞 SIM:</b>", reply_markup=kb, parse_mode="HTML")
         await UserState.waiting_sim.set()
     else:
+        await state.update_data(sim_step_shown=False)
         from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
         kb = ReplyKeyboardMarkup(resize_keyboard=True)
         kb.row(KeyboardButton("✅ Bor"), KeyboardButton("❌ Yo'q"))
@@ -1167,7 +1181,7 @@ async def box_selected(message: types.Message, state: FSMContext):
         data = await state.get_data()
         model_name = data.get('model_name', '')
 
-        if should_ask_sim_type(model_name):
+        if data.get('sim_step_shown'):
             from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
             kb = ReplyKeyboardMarkup(resize_keyboard=True)
             kb.row(KeyboardButton("📱 SIM karta"), KeyboardButton("📲 eSIM"))
@@ -1303,6 +1317,24 @@ async def parts_callback(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
 
 
+# ================ WAITING_PARTS - BACK BUTTON ================
+@dp.message_handler(lambda m: m.text in ["◀️ Orqaga", "🏠 Bosh menyu"], state=UserState.waiting_parts)
+async def waiting_parts_back(message: types.Message, state: FSMContext):
+    """waiting_parts dan orqaga - qismlar tanlovi sahifasiga"""
+    if message.text == "🏠 Bosh menyu":
+        await state.finish()
+        await message.answer("🏠 Bosh menyu", reply_markup=main_menu(message.from_user.id in ADMINS))
+        return
+
+    # Orqaga → waiting_parts_choice ga qaytish
+    await message.answer(
+        "<b>🔧 Telefonning qismlari almashganmi?</b>",
+        reply_markup=parts_choice_kb(),
+        parse_mode="HTML"
+    )
+    await UserState.waiting_parts_choice.set()
+
+
 # ================ FINAL PRICE - CALLBACK ================
 async def show_final_price_from_callback(call: types.CallbackQuery, state: FSMContext):
     """Yakuniy narx - CALLBACK"""
@@ -1382,7 +1414,7 @@ async def show_final_price_from_callback(call: types.CallbackQuery, state: FSMCo
         try:
             api_res = await api.use_pricing(user_id, phone_model, price_value)
         except Exception as e:
-            await call.message.answer("❌ API xato", reply_markup=main_menu(user_id in ADMINS))
+            await call.message.answer("❌ Server bilan aloqa uzildi. Bir daqiqadan so'ng qaytadan urinib ko'ring.", reply_markup=main_menu(user_id in ADMINS))
             await state.finish()
             return
 
@@ -1409,18 +1441,15 @@ async def show_final_price_from_callback(call: types.CallbackQuery, state: FSMCo
 
 💰 <b>Narx:</b> <code>{display_price}</code>
 
-{'🎁 <b>Bepul ishlatildi!</b>' if is_free else '💰 <b>Pullik ishlatildi!</b>'}
-💳 <b>Balans:</b> {balance} ta
-🎁 <b>Bepul qoldi:</b> {free_trials} ta
-
 🕒 {now}
 """
 
-    from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.row(KeyboardButton("🔄 Yana hisoblash"), KeyboardButton("🏠 Bosh menyu"))
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    inline_kb = InlineKeyboardMarkup()
+    inline_kb.add(InlineKeyboardButton("🔄 Qayta narxlash", callback_data="reprice"))
 
-    await call.message.answer(text, reply_markup=kb, parse_mode="HTML")
+    await call.message.answer(text, reply_markup=inline_kb, parse_mode="HTML")
+    await call.message.answer("🏠 Bosh menyu", reply_markup=main_menu(call.from_user.id in ADMINS))
     await state.finish()
 
 
@@ -1500,7 +1529,7 @@ async def show_final_price(message: types.Message, state: FSMContext):
         try:
             api_res = await api.use_pricing(user_id, phone_model, price_value)
         except Exception as e:
-            await message.answer("❌ API xato", reply_markup=main_menu(user_id in ADMINS))
+            await message.answer("❌ Server bilan aloqa uzildi. Bir daqiqadan so'ng qaytadan urinib ko'ring.", reply_markup=main_menu(user_id in ADMINS))
             await state.finish()
             return
 
@@ -1527,19 +1556,79 @@ async def show_final_price(message: types.Message, state: FSMContext):
 
 💰 <b>Narx:</b> <code>{display_price}</code>
 
-{'🎁 <b>Bepul ishlatildi!</b>' if is_free else '💰 <b>Pullik ishlatildi!</b>'}
-💳 <b>Balans:</b> {balance} ta
-🎁 <b>Bepul qoldi:</b> {free_trials} ta
-
 🕒 {now}
 """
 
-    from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.row(KeyboardButton("🔄 Yana hisoblash"), KeyboardButton("🏠 Bosh menyu"))
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    inline_kb = InlineKeyboardMarkup()
+    inline_kb.add(InlineKeyboardButton("🔄 Qayta narxlash", callback_data="reprice"))
 
-    await message.answer(text, reply_markup=kb, parse_mode="HTML")
+    await message.answer(text, reply_markup=inline_kb, parse_mode="HTML")
+    await message.answer("🏠 Bosh menyu", reply_markup=main_menu(user_id in ADMINS))
     await state.finish()
+
+
+# ================ REPRICE CALLBACK ================
+@dp.callback_query_handler(lambda c: c.data == "reprice", state='*')
+async def reprice_callback(call: types.CallbackQuery, state: FSMContext):
+    """Qayta narxlash inline tugmasi"""
+    await call.answer()
+    await state.finish()
+    user_id = call.from_user.id
+
+    if not is_feature_enabled('pricing'):
+        await call.message.answer("🔧 Narxlash hozirda texnik ishlar sababli ishlamaydi.",
+                                  reply_markup=main_menu(user_id in ADMINS))
+        return
+
+    if user_id not in ADMINS:
+        is_subscribed = await check_subscription(user_id)
+        if not is_subscribed:
+            text = SUBSCRIPTION_TEXT.format(channel=CHANNEL_USERNAME)
+            await call.message.answer(text, reply_markup=subscription_keyboard(), parse_mode="HTML")
+            return
+
+    local_check = check_can_price(user_id)
+    if local_check.get('reason') == 'User topilmadi':
+        await call.message.answer("❌ Iltimos, /start bosing.", reply_markup=main_menu(user_id in ADMINS))
+        return
+    if local_check.get("need_phone"):
+        await call.message.answer(local_check.get("message", "📱 Telefon kerak"))
+        return
+
+    free_trials = int(local_check.get("free_trials_left", 0) or 0)
+    api_balance = 0
+    if free_trials <= 0:
+        try:
+            api_res = await api.get_balance(user_id)
+            api_balance = int(api_res.get("balance", 0) or 0)
+        except:
+            api_balance = 0
+
+    if free_trials <= 0 and api_balance <= 0:
+        from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+        kb = ReplyKeyboardMarkup(resize_keyboard=True)
+        kb.row(KeyboardButton("💰 Hisobni to'ldirish"))
+        kb.row(KeyboardButton("🏠 Bosh menyu"))
+        await call.message.answer(
+            f"❌ <b>Balans yetarli emas!</b>\n\n🎁 <b>Bepul:</b> 0 ta\n💰 <b>Balans:</b> {api_balance} ta\n\n💡 <b>Hisobni to'ldiring:</b>",
+            reply_markup=kb, parse_mode="HTML"
+        )
+        return
+
+    models = get_models()
+    if not models:
+        await call.message.answer("❌ Modellar topilmadi")
+        return
+
+    sorted_models = sort_models_naturally(models)
+    kb = create_keyboard([m['name'] for m in sorted_models], row_width=2)
+    status = f"🎁 <b>Bepul: {free_trials} ta</b>" if free_trials > 0 else f"💰 <b>Balans: {api_balance} ta</b>"
+    await UserState.waiting_model.set()
+    await call.message.answer(
+        f"📱 <b>Telefon narxlash</b>\n\n{status}\n\n<b>Modelni tanlang:</b>",
+        reply_markup=kb, parse_mode="HTML"
+    )
 
 
 # ================ ABOUT ================

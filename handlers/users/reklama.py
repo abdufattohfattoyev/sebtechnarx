@@ -407,7 +407,7 @@ class Advertisement:
 # ============ HANDLERLAR ============
 
 @dp.message_handler(Command("reklama"), state="*", user_id=ADMINS)
-@dp.message_handler(lambda m: m.text == "📣 Reklama", state="*", user_id=ADMINS)
+@dp.message_handler(lambda m: m.text == "📢 Reklama", state="*", user_id=ADMINS)
 async def reklama_handler(message: types.Message, state: FSMContext):
     """Reklama yuborish boshlash"""
     await state.finish()

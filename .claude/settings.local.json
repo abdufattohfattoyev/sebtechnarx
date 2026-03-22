@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -r \"TODO\\\\|FIXME\\\\|BUG\\\\|XXX\\\\|HACK\" /d/sebtechnarx/handlers /d/sebtechnarx/utils --include=*.py)",
+      "Bash(python:*)"
+    ]
+  }
+}

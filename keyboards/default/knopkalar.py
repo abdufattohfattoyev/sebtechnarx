@@ -165,16 +165,19 @@ def admin_kb():
         KeyboardButton("📢 Reklama")
     )
 
-    # Uchinchi qator - Qo'shimcha funksiyalar
+    # Uchinchi qator - Foydalanuvchi boshqaruvi
+    kb.row(KeyboardButton("👤 Foydalanuvchi"))
+
+    # To'rtinchi qator - Qo'shimcha funksiyalar
     kb.row(
         KeyboardButton("📱 Namuna"),
         KeyboardButton("🗑 Narxlarni tozalash")
     )
 
-    # To'rtinchi qator - TAMIRLASH REJIMI (YANGI!)
+    # Beshinchi qator - Tamirlash rejimi
     kb.row(KeyboardButton("🔧 Tamirlash rejimi"))
 
-    # Beshinchi qator - Orqaga
+    # Oltinchi qator - Orqaga
     kb.row(KeyboardButton("🏠 Bosh menyu"))
 
     return kb

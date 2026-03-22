@@ -428,7 +428,7 @@ async def cancel_payment_callback(callback: types.CallbackQuery, state: FSMConte
 
 # ================ BALANS KO'RISH ================
 
-@dp.message_handler(lambda m: m.text == "💤 Mening hisobim", state='*')
+@dp.message_handler(lambda m: m.text == "👤 Mening hisobim", state='*')
 async def show_my_account(message: types.Message, state: FSMContext):
     """Balansni ko'rsatish"""
     # State ni tozalash

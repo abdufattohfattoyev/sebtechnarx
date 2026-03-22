@@ -3,10 +3,12 @@ import psycopg2
 import psycopg2.extras
 import os
 from datetime import datetime, timedelta
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
-# .env faylni yuklash
-load_dotenv()
+from data.config import FREE_TRIALS_DEFAULT
+
+# .env faylni yuklash (har qanday papkadan ishlaydi)
+load_dotenv(find_dotenv(usecwd=True))
 
 # USER DATABASE konfiguratsiyasi - ALOHIDA ENVIRONMENT VARIABLES
 USER_DB_CONFIG = {
@@ -43,14 +45,14 @@ def init_user_db():
         print("=" * 60)
 
         # ===================== USERS JADVALI =====================
-        cursor.execute('''
+        cursor.execute(f'''
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 telegram_id BIGINT UNIQUE NOT NULL,
                 phone_number VARCHAR(20),
                 full_name VARCHAR(255),
                 username VARCHAR(255),
-                free_trials_left INTEGER DEFAULT 3,
+                free_trials_left INTEGER DEFAULT {FREE_TRIALS_DEFAULT},
                 balance INTEGER DEFAULT 0,
                 total_pricings INTEGER DEFAULT 0,
                 is_active BOOLEAN DEFAULT TRUE,
@@ -141,8 +143,6 @@ def init_user_db():
             print("✅ Database optimizatsiya qilindi!")
         except Exception as e:
             print(f"⚠️ VACUUM ANALYZE xato (kritik emas): {e}")
-        finally:
-            conn.autocommit = False
 
     except Exception as e:
         conn.rollback()
@@ -158,7 +158,7 @@ def init_user_db():
 # ============================================================
 
 def create_user(telegram_id, full_name, username=None, phone_number=None):
-    """User yaratish yoki yangilash - 5 TA BEPUL URINISH"""
+    """User yaratish yoki yangilash"""
     conn = get_user_conn()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
@@ -191,9 +191,9 @@ def create_user(telegram_id, full_name, username=None, phone_number=None):
             cursor.execute("""
                 INSERT INTO users 
                 (telegram_id, full_name, username, phone_number, free_trials_left, balance, total_pricings, is_active)
-                VALUES (%s, %s, %s, %s, 5, 0, 0, TRUE)
+                VALUES (%s, %s, %s, %s, %s, 0, 0, TRUE)
                 RETURNING *
-            """, (telegram_id, full_name, username, phone_number))
+            """, (telegram_id, full_name, username, phone_number, FREE_TRIALS_DEFAULT))
             user = cursor.fetchone()
             conn.commit()
 
@@ -201,7 +201,7 @@ def create_user(telegram_id, full_name, username=None, phone_number=None):
                 'success': True,
                 'user': dict(user),
                 'is_new': True,
-                'message': '🎁 Sizga 5 ta bepul urinish berildi!'
+                'message': f'🎁 Sizga {FREE_TRIALS_DEFAULT} ta bepul urinish berildi!'
             }
 
     except psycopg2.IntegrityError:
@@ -998,6 +998,128 @@ def get_all_users():
     except Exception as e:
         print(f"❌ Foydalanuvchilarni olishda xato: {e}")
         return []
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ============================================================
+# ADMIN - FOYDALANUVCHI BOSHQARUVI
+# ============================================================
+
+def search_user(query):
+    """Telegram ID yoki telefon raqam bo'yicha foydalanuvchi qidirish"""
+    conn = get_user_conn()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        try:
+            tg_id = int(query)
+            cursor.execute("SELECT * FROM users WHERE telegram_id = %s", (tg_id,))
+        except ValueError:
+            cursor.execute("SELECT * FROM users WHERE phone_number = %s", (query,))
+        row = cursor.fetchone()
+        return {'success': True, 'user': dict(row)} if row else {'success': False, 'error': 'Topilmadi'}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def block_user(telegram_id, block=True):
+    """Foydalanuvchini bloklash yoki blokdan chiqarish"""
+    conn = get_user_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE users SET is_active = %s, updated_at = CURRENT_TIMESTAMP WHERE telegram_id = %s RETURNING id",
+            (not block, telegram_id)
+        )
+        result = cursor.fetchone()
+        conn.commit()
+        if result:
+            action = "bloklandi" if block else "blokdan chiqarildi"
+            return {'success': True, 'message': f'✅ Foydalanuvchi {action}'}
+        return {'success': False, 'error': 'User topilmadi'}
+    except Exception as e:
+        conn.rollback()
+        return {'success': False, 'error': str(e)}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def set_free_trials(telegram_id, count):
+    """Bepul urinishlar sonini o'rnatish"""
+    conn = get_user_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE users SET free_trials_left = %s, updated_at = CURRENT_TIMESTAMP WHERE telegram_id = %s RETURNING id",
+            (count, telegram_id)
+        )
+        result = cursor.fetchone()
+        conn.commit()
+        if result:
+            return {'success': True, 'message': f'✅ Bepul urinish {count} ta qilindi'}
+        return {'success': False, 'error': 'User topilmadi'}
+    except Exception as e:
+        conn.rollback()
+        return {'success': False, 'error': str(e)}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_user_payment_history(telegram_id, limit=5):
+    """Foydalanuvchi to'lov tarixini olish"""
+    conn = get_user_conn()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cursor.execute("""
+            SELECT tariff_name, amount, count, payment_status, created_at
+            FROM payment_history
+            WHERE telegram_id = %s
+            ORDER BY created_at DESC
+            LIMIT %s
+        """, (telegram_id, limit))
+        rows = cursor.fetchall()
+        return {'success': True, 'payments': [dict(r) for r in rows]}
+    except Exception as e:
+        return {'success': False, 'payments': [], 'error': str(e)}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_top_models_analytics(period='daily', limit=10):
+    """Eng ko'p narxlangan modellar - kunlik yoki haftalik"""
+    conn = get_user_conn()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        if period == 'daily':
+            time_filter = "AND DATE(created_at) = CURRENT_DATE"
+        elif period == 'weekly':
+            time_filter = "AND created_at >= CURRENT_DATE - INTERVAL '7 days'"
+        else:
+            time_filter = ""
+
+        cursor.execute(f"""
+            SELECT
+                phone_model,
+                COUNT(*) as count,
+                COUNT(DISTINCT telegram_id) as unique_users
+            FROM pricing_history
+            WHERE phone_model IS NOT NULL AND phone_model != ''
+            {time_filter}
+            GROUP BY phone_model
+            ORDER BY count DESC
+            LIMIT %s
+        """, (limit,))
+        rows = cursor.fetchall()
+        return {'success': True, 'models': [dict(r) for r in rows]}
+    except Exception as e:
+        return {'success': False, 'models': [], 'error': str(e)}
     finally:
         cursor.close()
         conn.close()

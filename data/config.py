@@ -15,5 +15,11 @@ API_BASE_URL = env.str("API_BASE_URL", "https://sebmarket.uz/api/payments")
 # Database
 DB_PATH = env.str("DB_PATH", "data/phones.db")
 
+# Bepul urinishlar soni (yangi foydalanuvchilarga)
+FREE_TRIALS_DEFAULT = 3
+
+# Bot
+BOT_USERNAME = "@Sebmarket_bot"
+
 # Boshqa
 START_PHOTO_FILE_ID = "AgACAgIAAxkBAAIbHWk4P8fZt-Ir3804yO8XHmusmDw7AAJyEWsbigTBScr0wXcXOjb8AQADAgADeAADNgQ"

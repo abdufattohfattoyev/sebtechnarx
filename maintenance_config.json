@@ -1,0 +1,11 @@
+{
+  "maintenance_mode": false,
+  "features": {
+    "pricing": true,
+    "payment": true,
+    "account": true
+  },
+  "message": "Bot hozirda texnik ishlar olib borilmoqda.",
+  "updated_at": "2026-03-22 12:56:17",
+  "updated_by": null
+}

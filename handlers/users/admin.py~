@@ -12,7 +12,7 @@ from aiogram.types import InputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.exceptions import RetryAfter
 
 from loader import dp, bot
-from keyboards.default.knopkalar import admin_kb, cleanup_confirm_kb
+from keyboards.default.knopkalar import admin_kb, cleanup_confirm_kb, maintenance_kb
 from data.config import ADMINS
 
 # ============================================
@@ -39,8 +39,14 @@ from utils.db_api.user_database import (
     get_users_statistics,
     get_detailed_users_statistics,
     get_all_users_count,
-    get_total_pricings
+    get_total_pricings,
+    search_user,
+    block_user,
+    set_free_trials,
+    add_balance,
+    get_top_models_analytics,
 )
+from utils.misc.maintenance import get_maintenance_config, toggle_feature, is_feature_enabled, save_maintenance_config
 
 # ============================================
 # KONSTANTALAR (OPTIMIZED)
@@ -59,6 +65,12 @@ class ImportState(StatesGroup):
 
 class CleanupState(StatesGroup):
     confirm = State()
+
+
+class AdminUserState(StatesGroup):
+    waiting_search = State()
+    waiting_balance = State()
+    waiting_trials = State()
 
 
 # ============================================
@@ -663,6 +675,10 @@ async def show_statistics_menu(message: types.Message):
         InlineKeyboardButton(text="📊 To'liq", callback_data="stats_full"),
         InlineKeyboardButton(text="📈 Batafsil", callback_data="stats_detailed")
     )
+    keyboard.add(
+        InlineKeyboardButton(text="📱 Bugungi top modeller", callback_data="stats_models_daily"),
+        InlineKeyboardButton(text="📅 Haftalik top modeller", callback_data="stats_models_weekly")
+    )
 
     await message.answer(
         "📊 <b>STATISTIKA MENU</b>\n\n"
@@ -927,6 +943,318 @@ async def show_detailed_statistics(callback: types.CallbackQuery):
     except Exception as e:
         await callback.message.edit_text(f"❌ Xato: {e}")
         await callback.answer()
+
+
+@dp.message_handler(lambda m: m.text == "🔧 Tamirlash rejimi" and m.from_user.id in ADMINS, state='*')
+async def maintenance_mode_handler(message: types.Message, state: FSMContext):
+    """Tamirlash rejimi menu"""
+    await state.finish()
+
+    config = get_maintenance_config()
+    maintenance_mode = config.get('maintenance_mode', False)
+    features = config.get('features', {})
+
+    # Holat emoji
+    pricing_emoji = "❌" if not is_feature_enabled('pricing') else "✅"
+    payment_emoji = "❌" if not is_feature_enabled('payment') else "✅"
+    account_emoji = "❌" if not is_feature_enabled('account') else "✅"
+
+    global_status = "⚠️ YOPIQ" if maintenance_mode else "✅ OCHIQ"
+
+    text = f"""🔧 <b>TAMIRLASH REJIMI</b>
+
+📊 <b>Hozirgi holat:</b> {global_status}
+
+⚙️ <b>Bo'limlar holati:</b>
+{pricing_emoji} Narxlash: {"O'chiq" if not is_feature_enabled('pricing') else "Yoniq"}
+{payment_emoji} To'lov: {"O'chiq" if not is_feature_enabled('payment') else "Yoniq"}
+{account_emoji} Hisob: {"O'chiq" if not is_feature_enabled('account') else "Yoniq"}
+
+━━━━━━━━━━━━━━━━━
+
+<b>Bo'limlarni boshqarish:</b>
+• Har bir bo'limni alohida yoqish/o'chirish mumkin
+• Yoki barchasini birdan boshqarish mumkin
+
+<b>Eslatma:</b> O'zgarishlar darhol qo'llaniladi!"""
+
+    await message.answer(text, reply_markup=maintenance_kb(), parse_mode="HTML")
+
+
+@dp.message_handler(lambda m: m.text == "🔴 Barchasini yopish" and m.from_user.id in ADMINS, state='*')
+async def close_all_features(message: types.Message, state: FSMContext):
+    """Barcha funksiyalarni yopish"""
+    config = get_maintenance_config()
+    config['maintenance_mode'] = True
+    config['updated_by'] = message.from_user.id
+
+    save_maintenance_config(config)
+
+    await message.answer(
+        "🔴 <b>Barcha funksiyalar yopildi!</b>\n\n"
+        "Foydalanuvchilar tamirlash xabarini ko'rishadi.",
+        reply_markup=maintenance_kb(),
+        parse_mode="HTML"
+    )
+
+
+@dp.message_handler(lambda m: m.text == "🟢 Barchasini ochish" and m.from_user.id in ADMINS, state='*')
+async def open_all_features(message: types.Message, state: FSMContext):
+    """Barcha funksiyalarni ochish"""
+    config = get_maintenance_config()
+    config['maintenance_mode'] = False
+    config['features'] = {
+        'pricing': True,
+        'payment': True,
+        'account': True
+    }
+    config['updated_by'] = message.from_user.id
+
+    save_maintenance_config(config)
+
+    await message.answer(
+        "🟢 <b>Barcha funksiyalar ochildi!</b>\n\n"
+        "Bot normal ishlashda.",
+        reply_markup=maintenance_kb(),
+        parse_mode="HTML"
+    )
+
+
+@dp.message_handler(lambda m: m.text in ["📱 Narxlash", "💰 To'lov", "👤 Hisob"] and m.from_user.id in ADMINS, state='*')
+async def toggle_single_feature(message: types.Message, state: FSMContext):
+    """Alohida funksiyani yoqish/o'chirish"""
+    feature_map = {
+        "📱 Narxlash": "pricing",
+        "💰 To'lov": "payment",
+        "👤 Hisob": "account"
+    }
+
+    feature = feature_map.get(message.text)
+    if not feature:
+        return
+
+    result = toggle_feature(feature, message.from_user.id)
+
+    await message.answer(
+        result['message'],
+        reply_markup=maintenance_kb(),
+        parse_mode="HTML"
+    )
+
+
+@dp.message_handler(lambda m: m.text == "📊 Holat" and m.from_user.id in ADMINS, state='*')
+async def show_maintenance_status(message: types.Message, state: FSMContext):
+    """Tamirlash rejimi holatini ko'rsatish"""
+    config = get_maintenance_config()
+    maintenance_mode = config.get('maintenance_mode', False)
+    features = config.get('features', {})
+    updated_at = config.get('updated_at', 'Noma\'lum')
+    updated_by = config.get('updated_by', 'Noma\'lum')
+
+    pricing_status = "✅ Ishlaydi" if is_feature_enabled('pricing') else "❌ Yopiq"
+    payment_status = "✅ Ishlaydi" if is_feature_enabled('payment') else "❌ Yopiq"
+    account_status = "✅ Ishlaydi" if is_feature_enabled('account') else "❌ Yopiq"
+
+    global_status = "⚠️ TO'LIQ TAMIRLASH" if maintenance_mode else "✅ NORMAL"
+
+    text = f"""📊 <b>TAMIRLASH REJIMI HOLATI</b>
+
+🔧 <b>Global holat:</b> {global_status}
+
+📱 <b>Narxlash:</b> {pricing_status}
+💰 <b>To'lov:</b> {payment_status}
+👤 <b>Hisob:</b> {account_status}
+
+━━━━━━━━━━━━━━━━━
+
+⏰ <b>Oxirgi yangilash:</b> {updated_at}
+👤 <b>Kim tomonidan:</b> {updated_by if updated_by != 'Nomalum' else 'Nomalum'}"""
+
+    await message.answer(text, reply_markup=maintenance_kb(), parse_mode="HTML")
+# ============================================
+# MODEL ANALITIKASI
+# ============================================
+
+def _format_models_text(result, title):
+    if not result['success']:
+        return f"❌ Xato: {result.get('error')}"
+    models = result['models']
+    if not models:
+        return f"{title}\n\nMa'lumot yo'q."
+    medals = ['🥇', '🥈', '🥉']
+    text = f"{title}\n\n"
+    for i, m in enumerate(models):
+        medal = medals[i] if i < 3 else f"{i + 1}."
+        text += f"{medal} <code>{m['phone_model']}</code>\n"
+        text += f"   📊 {m['count']} ta narxlash | 👥 {m['unique_users']} ta foydalanuvchi\n\n"
+    return text
+
+
+@dp.callback_query_handler(lambda c: c.data == "stats_models_daily", user_id=ADMINS)
+async def show_daily_models(callback: types.CallbackQuery):
+    result = get_top_models_analytics(period='daily', limit=10)
+    text = _format_models_text(result, "📱 <b>BUGUNGI TOP MODELLER</b>")
+    await callback.message.answer(text, parse_mode="HTML")
+    await callback.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "stats_models_weekly", user_id=ADMINS)
+async def show_weekly_models(callback: types.CallbackQuery):
+    result = get_top_models_analytics(period='weekly', limit=10)
+    text = _format_models_text(result, "📅 <b>HAFTALIK TOP MODELLER</b>")
+    await callback.message.answer(text, parse_mode="HTML")
+    await callback.answer()
+
+
+# ============================================
+# FOYDALANUVCHI BOSHQARUVI
+# ============================================
+
+def _user_info_text(user):
+    status = "✅ Aktiv" if user['is_active'] else "🚫 Bloklangan"
+    return (
+        f"👤 <b>FOYDALANUVCHI</b>\n\n"
+        f"🆔 ID: <code>{user['telegram_id']}</code>\n"
+        f"📝 Ism: {user['full_name'] or '—'}\n"
+        f"🔗 Username: @{user['username']}" + ("\n" if user['username'] else " —\n") +
+        f"📱 Telefon: {user['phone_number'] or '—'}\n"
+        f"💰 Balans: {user['balance']} ta\n"
+        f"🎁 Bepul: {user['free_trials_left']} ta\n"
+        f"📊 Jami narxlash: {user['total_pricings']} ta\n"
+        f"🔘 Holat: {status}\n"
+        f"📅 Ro'yxat: {str(user['created_at'])[:10]}"
+    )
+
+
+def _user_action_kb(telegram_id, is_active):
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton("➕ Balans", callback_data=f"um_add_bal_{telegram_id}"),
+        InlineKeyboardButton("➖ Balans", callback_data=f"um_sub_bal_{telegram_id}"),
+    )
+    kb.add(
+        InlineKeyboardButton("🎁 Bepul urinish", callback_data=f"um_trials_{telegram_id}"),
+    )
+    block_text = "✅ Blokdan chiqar" if not is_active else "🚫 Bloklash"
+    block_data = f"um_unblock_{telegram_id}" if not is_active else f"um_block_{telegram_id}"
+    kb.add(InlineKeyboardButton(block_text, callback_data=block_data))
+    return kb
+
+
+@dp.message_handler(lambda m: m.text == "👤 Foydalanuvchi" and m.from_user.id in ADMINS, state='*')
+async def user_manage_handler(message: types.Message, state: FSMContext):
+    await state.finish()
+    await AdminUserState.waiting_search.set()
+    await message.answer(
+        "🔍 <b>Foydalanuvchi qidirish</b>\n\n"
+        "Telegram ID yoki telefon raqam yuboring:\n"
+        "<i>Misol: 123456789 yoki +998901234567</i>",
+        parse_mode="HTML",
+        reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add("◀️ Orqaga")
+    )
+
+
+@dp.message_handler(state=AdminUserState.waiting_search)
+async def user_search_handler(message: types.Message, state: FSMContext):
+    if message.text == "◀️ Orqaga":
+        await state.finish()
+        await message.answer("Admin panel", reply_markup=admin_kb())
+        return
+
+    result = search_user(message.text.strip())
+    if not result['success']:
+        await message.answer(f"❌ {result['error']}\n\nQaytadan urinib ko'ring:")
+        return
+
+    user = result['user']
+    await state.update_data(found_user_id=user['telegram_id'])
+    await state.finish()
+    await message.answer(
+        _user_info_text(user),
+        parse_mode="HTML",
+        reply_markup=_user_action_kb(user['telegram_id'], user['is_active'])
+    )
+    await message.answer("Admin panel", reply_markup=admin_kb())
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("um_block_"), user_id=ADMINS)
+async def um_block(callback: types.CallbackQuery):
+    tg_id = int(callback.data.split("_")[2])
+    result = block_user(tg_id, block=True)
+    await callback.answer(result['message'] if result['success'] else result['error'], show_alert=True)
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("um_unblock_"), user_id=ADMINS)
+async def um_unblock(callback: types.CallbackQuery):
+    tg_id = int(callback.data.split("_")[2])
+    result = block_user(tg_id, block=False)
+    await callback.answer(result['message'] if result['success'] else result['error'], show_alert=True)
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("um_add_bal_") or c.data.startswith("um_sub_bal_"), user_id=ADMINS)
+async def um_balance_start(callback: types.CallbackQuery, state: FSMContext):
+    parts = callback.data.split("_")
+    action = "add" if callback.data.startswith("um_add_bal_") else "sub"
+    tg_id = int(parts[3])
+    await state.update_data(um_tg_id=tg_id, um_action=action)
+    await AdminUserState.waiting_balance.set()
+    word = "qo'shish" if action == "add" else "ayirish"
+    await callback.message.answer(f"Miqdorni kiriting ({word}):")
+    await callback.answer()
+
+
+@dp.message_handler(state=AdminUserState.waiting_balance)
+async def um_balance_input(message: types.Message, state: FSMContext):
+    try:
+        amount = int(message.text.strip())
+        if amount <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ Musbat son kiriting:")
+        return
+
+    data = await state.get_data()
+    tg_id = data['um_tg_id']
+    action = data['um_action']
+    final_amount = amount if action == "add" else -amount
+
+    result = add_balance(tg_id, final_amount)
+    await state.finish()
+    if result['success']:
+        await message.answer(
+            f"✅ Balans yangilandi!\nYangi balans: {result['new_balance']} ta",
+            reply_markup=admin_kb()
+        )
+    else:
+        await message.answer(f"❌ {result['error']}", reply_markup=admin_kb())
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("um_trials_"), user_id=ADMINS)
+async def um_trials_start(callback: types.CallbackQuery, state: FSMContext):
+    tg_id = int(callback.data.split("_")[2])
+    await state.update_data(um_tg_id=tg_id)
+    await AdminUserState.waiting_trials.set()
+    await callback.message.answer("Bepul urinishlar sonini kiriting:")
+    await callback.answer()
+
+
+@dp.message_handler(state=AdminUserState.waiting_trials)
+async def um_trials_input(message: types.Message, state: FSMContext):
+    try:
+        count = int(message.text.strip())
+        if count < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ 0 yoki undan katta son kiriting:")
+        return
+
+    data = await state.get_data()
+    result = set_free_trials(data['um_tg_id'], count)
+    await state.finish()
+    if result['success']:
+        await message.answer(f"✅ {result['message']}", reply_markup=admin_kb())
+    else:
+        await message.answer(f"❌ {result['error']}", reply_markup=admin_kb())
 
 
 # ============================================

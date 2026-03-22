@@ -3,10 +3,10 @@ import psycopg2
 import psycopg2.extras
 import os
 from datetime import datetime
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
-# .env faylni yuklash
-load_dotenv()
+# .env faylni yuklash (har qanday papkadan ishlaydi)
+load_dotenv(find_dotenv(usecwd=True))
 
 # Database konfiguratsiyasi
 PHONE_DB_CONFIG = {
@@ -279,10 +279,6 @@ def init_db():
         cursor.execute("ANALYZE")
         conn.commit()
 
-        # Connection yopish
-        cursor.close()
-        conn.close()
-
         # ⚠️ VACUUM alohida autocommit connection da ishlaydi
         try:
             conn_vacuum = psycopg2.connect(**PHONE_DB_CONFIG)
@@ -323,11 +319,10 @@ def init_db():
         print(f"\n❌ Database yaratishda xato: {e}")
         raise
     finally:
-        # Agar connection hali ochiq bo'lsa
         try:
             cursor.close()
             conn.close()
-        except:
+        except Exception:
             pass
 
 
@@ -692,26 +687,18 @@ def get_price(model_id, storage, color, sim_type, battery, has_box, damage):
 
         # ANIQ QIDIRISH
         cursor.execute("""
-            SELECT price, damage_pct FROM prices 
-            WHERE model_id = %s 
-            AND storage_size = %s 
-            AND color_name = %s 
-            AND sim_type = %s 
-            AND battery_label = %s 
+            SELECT price FROM prices
+            WHERE model_id = %s
+            AND storage_size = %s
+            AND color_name = %s
+            AND sim_type = %s
+            AND battery_label = %s
             AND has_box = %s
-        """, (model_id, storage, color_name, sim_type, battery, has_box_bool))
+            AND LOWER(damage_pct) = %s
+        """, (model_id, storage, color_name, sim_type, battery, has_box_bool, search_damage))
 
-        matching_rows = cursor.fetchall()
-
-        if matching_rows:
-            for row in matching_rows:
-                db_damage = row['damage_pct']
-                normalized_db_damage = normalize_for_search(db_damage)
-
-                if normalized_db_damage == search_damage:
-                    return float(row['price'])
-
-        return None
+        row = cursor.fetchone()
+        return float(row['price']) if row else None
     finally:
         cursor.close()
         conn.close()
@@ -743,7 +730,8 @@ def get_total_prices_count():
         cursor.execute("SELECT COUNT(*) FROM prices")
         count = cursor.fetchone()[0]
         return count
-    except:
+    except Exception as e:
+        print(f"❌ Narxlar sonini olishda xato: {e}")
         return 0
     finally:
         cursor.close()

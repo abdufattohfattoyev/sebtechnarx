@@ -131,8 +131,26 @@ async def on_shutdown(dispatcher):
                 ),
                 timeout=5
             )
-        except:
-            pass
+        except asyncio.TimeoutError:
+            logger.warning(f"⚠️ Admin {admin_id} ga shutdown xabari timeout")
+        except (TelegramAPIError, NetworkError) as e:
+            logger.warning(f"⚠️ Admin {admin_id} ga shutdown xabari yuborilmadi: {e}")
+        except Exception as e:
+            logger.error(f"❌ Admin {admin_id} ga shutdown xabarida kutilmagan xato: {e}")
+            # Jiddiy xato — boshqa adminlarga xabar berish
+            for other_admin in ADMINS:
+                if other_admin != admin_id:
+                    try:
+                        await asyncio.wait_for(
+                            bot.send_message(
+                                other_admin,
+                                f"❌ <b>Shutdown xatosi!</b>\nAdmin {admin_id}: {e}",
+                                parse_mode="HTML"
+                            ),
+                            timeout=5
+                        )
+                    except Exception:
+                        pass
 
     # ============================================
     # 2. CONNECTION'LARNI YOPISH
