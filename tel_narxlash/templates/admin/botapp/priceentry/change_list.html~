@@ -1,0 +1,30 @@
+{% extends "admin/change_list.html" %}
+{% load i18n %}
+
+{% block object-tools-items %}
+    {{ block.super }}
+
+    {% if show_bulk_generate %}
+    <li>
+        <a href="{% url 'admin:botapp_priceentry_bulk_generate' %}" class="addlink" style="background:#4CAF50;padding:10px 15px;margin-left:5px;">
+            🚀 Avtomatik yaratish
+        </a>
+    </li>
+    {% endif %}
+
+    {% if show_excel_export %}
+    <li>
+        <a href="{% url 'admin:botapp_priceentry_export' %}" class="addlink" style="background:#ff9800;padding:10px 15px;margin-left:5px;">
+            📊 Excel yuklab olish
+        </a>
+    </li>
+    {% endif %}
+
+    {% if show_excel_import %}
+    <li>
+        <a href="{% url 'admin:botapp_priceentry_import' %}" class="addlink" style="background:#2196F3;padding:10px 15px;margin-left:5px;">
+            📥 Excel import
+        </a>
+    </li>
+    {% endif %}
+{% endblock %}

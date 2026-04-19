@@ -663,9 +663,7 @@ async def cleanup_confirm(message: types.Message, state: FSMContext):
 # STATISTIKA MENU - YANGI!
 # ============================================
 
-@dp.message_handler(lambda msg: msg.text == "📊 Statistika", user_id=ADMINS)
-async def show_statistics_menu(message: types.Message):
-    """Statistika menu - faqat adminlar uchun"""
+def _stats_keyboard():
     keyboard = InlineKeyboardMarkup(row_width=2)
     keyboard.add(
         InlineKeyboardButton(text="🗄️ Database", callback_data="stats_database"),
@@ -679,11 +677,42 @@ async def show_statistics_menu(message: types.Message):
         InlineKeyboardButton(text="📱 Bugungi top modeller", callback_data="stats_models_daily"),
         InlineKeyboardButton(text="📅 Haftalik top modeller", callback_data="stats_models_weekly")
     )
+    return keyboard
 
+
+@dp.message_handler(commands=["stats"], user_id=ADMINS)
+async def stats_command(message: types.Message):
+    """/stats komandasi — tezkor statistika"""
+    result = get_users_statistics()
+    if not result['success']:
+        await message.answer(f"❌ Xato: {result.get('error')}")
+        return
+
+    stats = result['stats']
+    total_pricings = get_total_pricings()
+
+    text = (
+        f"📊 <b>TEZKOR STATISTIKA</b>\n\n"
+        f"👥 Jami foydalanuvchi: <b>{stats['total_users']:,}</b>\n"
+        f"  • Bugun yangi: <b>{stats['today_new_users']}</b>\n"
+        f"  • Hafta yangi: <b>{stats['week_new_users']}</b>\n"
+        f"  • Oy yangi: <b>{stats['month_new_users']:,}</b>\n\n"
+        f"📊 Narxlashlar:\n"
+        f"  • Jami: <b>{total_pricings:,}</b>\n"
+        f"  • Bugun aktiv: <b>{stats['today_active_users']}</b>\n"
+        f"  • Oy aktiv: <b>{stats['month_active_users']:,}</b>\n\n"
+        f"⏰ <i>{result['timestamp']}</i>"
+    )
+    await message.answer(text, parse_mode="HTML", reply_markup=_stats_keyboard())
+
+
+@dp.message_handler(lambda msg: msg.text == "📊 Statistika", user_id=ADMINS)
+async def show_statistics_menu(message: types.Message):
+    """Statistika menu - faqat adminlar uchun"""
     await message.answer(
         "📊 <b>STATISTIKA MENU</b>\n\n"
         "Qaysi statistikani ko'rmoqchisiz?",
-        reply_markup=keyboard,
+        reply_markup=_stats_keyboard(),
         parse_mode="HTML"
     )
 
@@ -788,11 +817,13 @@ async def show_users_statistics(callback: types.CallbackQuery):
             f"  • Aktiv: {stats['total_active_users']:,} ({stats['active_percentage']}%)\n"
             f"  • Aktiv emas: {stats['total_inactive_users']:,}\n\n"
             f"<b>📅 BUGUNGI:</b>\n"
-            f"  • Yangi userlar: {stats['today_new_users']}\n"
-            f"  • Aktiv userlar: {stats['today_active_users']}\n\n"
-            f"<b>📆 OYLIK:</b>\n"
-            f"  • Yangi userlar: {stats['month_new_users']:,}\n"
-            f"  • Aktiv userlar: {stats['month_active_users']:,}\n\n"
+            f"  • Yangi: {stats['today_new_users']}\n"
+            f"  • Aktiv: {stats['today_active_users']}\n\n"
+            f"<b>📆 HAFTALIK (7 kun):</b>\n"
+            f"  • Yangi: {stats['week_new_users']:,}\n\n"
+            f"<b>🗓 OYLIK:</b>\n"
+            f"  • Yangi: {stats['month_new_users']:,}\n"
+            f"  • Aktiv: {stats['month_active_users']:,}\n\n"
             f"<b>📱 QO'SHIMCHA:</b>\n"
             f"  • Telefon bor: {stats['users_with_phone']:,} ({stats['phone_percentage']}%)\n"
             f"  • Balans bor: {stats['users_with_balance']:,}\n"
@@ -1255,6 +1286,158 @@ async def um_trials_input(message: types.Message, state: FSMContext):
         await message.answer(f"✅ {result['message']}", reply_markup=admin_kb())
     else:
         await message.answer(f"❌ {result['error']}", reply_markup=admin_kb())
+
+
+# ============================================
+# MIJOZ XARIDLARI
+# ============================================
+
+class MijozXaridState(StatesGroup):
+    phone = State()
+
+
+@dp.message_handler(lambda m: m.text == "🛍 Mijoz xaridlari" and m.from_user.id in ADMINS, state="*")
+async def mijoz_xarid_start(message: types.Message, state: FSMContext):
+    await state.finish()
+    await MijozXaridState.phone.set()
+    await message.answer(
+        "📞 <b>Mijoz telefon raqamini kiriting:</b>\n\n"
+        "<i>Masalan: +998901234567 yoki 998901234567</i>",
+        parse_mode="HTML",
+        reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add("◀️ Orqaga")
+    )
+
+
+@dp.message_handler(state=MijozXaridState.phone)
+async def mijoz_xarid_search(message: types.Message, state: FSMContext):
+    if message.text == "◀️ Orqaga":
+        await state.finish()
+        await message.answer("Admin panel", reply_markup=admin_kb())
+        return
+
+    from utils.api import api
+    from datetime import datetime, timedelta
+
+    phone = message.text.strip()
+    # +998 yoki 998 formatga keltirish
+    digits = re.sub(r'\D', '', phone)
+    if len(digits) == 9:
+        phone = f"+998{digits}"
+    elif len(digits) == 12 and digits.startswith('998'):
+        phone = f"+{digits}"
+    elif not phone.startswith('+'):
+        phone = f"+{digits}"
+
+    wait_msg = await message.answer("🔄 Yuklanmoqda...", parse_mode="HTML")
+
+    result = await api.get_customer_purchases(phone)
+
+    await wait_msg.delete()
+
+    if not result.get('success'):
+        error = result.get('error', '')
+        if 'topilmadi' in str(error).lower() or '404' in str(error):
+            await message.answer(
+                f"📋 <b>Mijoz topilmadi.</b>\n\n"
+                f"📞 Raqam: <code>{phone}</code>\n\n"
+                "<i>Bu raqam bilan hech qanday xarid yo'q.</i>",
+                parse_mode="HTML",
+                reply_markup=admin_kb()
+            )
+        else:
+            await message.answer(
+                f"❌ <b>Server bilan aloqa yo'q.</b>\n\n<code>{error}</code>",
+                parse_mode="HTML",
+                reply_markup=admin_kb()
+            )
+        await state.finish()
+        return
+
+    customer  = result.get('customer', {})
+    purchases = result.get('purchases', [])
+    total     = result.get('total_purchases', 0)
+    total_usd = result.get('total_usd', 0)
+    total_uzs = result.get('total_uzs', 0)
+    debts     = result.get('debts', [])
+
+    if not purchases:
+        await message.answer(
+            f"👤 <b>{customer.get('name', 'Mijoz')}</b>\n"
+            f"📞 <code>{customer.get('phone', phone)}</code>\n\n"
+            "📋 Hech qanday xarid topilmadi.",
+            parse_mode="HTML",
+            reply_markup=admin_kb()
+        )
+        await state.finish()
+        return
+
+    phone_purchases = [p for p in purchases if p.get('type') == 'phone']
+    acc_purchases   = [p for p in purchases if p.get('type') == 'accessory']
+
+    lines = []
+    lines.append("🛍 <b>MIJOZ XARIDLARI</b>")
+    lines.append(f"👤 <b>{customer.get('name', '—')}</b>")
+    lines.append(f"📞 <code>{customer.get('phone', phone)}</code>")
+    lines.append("")
+    lines.append("━━━━━━━━━━━━━━━━━━━")
+    lines.append("📊 <b>UMUMIY</b>")
+    lines.append(f"• Jami xaridlar: <b>{total} ta</b>")
+    if total_usd > 0:
+        lines.append(f"• Telefonlar: <b>${total_usd:,.0f}</b>")
+    if total_uzs > 0:
+        uzs_str = f"{total_uzs:,.0f}".replace(',', ' ')
+        lines.append(f"• Aksessuarlar: <b>{uzs_str} so'm</b>")
+
+    if debts:
+        lines.append("")
+        for d in debts:
+            amt = d['amount']
+            cur = d['currency']
+            due = d.get('due_date')
+            amt_str = f"${amt:,.0f}" if cur == 'USD' else f"{amt:,.0f} so'm".replace(',', ' ')
+            due_str = f" | muddat: {due}" if due else ""
+            lines.append(f"⚠️ <b>Qarz: {amt_str}</b>{due_str}")
+
+    if phone_purchases:
+        lines.append("")
+        lines.append("━━━━━━━━━━━━━━━━━━━")
+        lines.append(f"📱 <b>TELEFONLAR ({len(phone_purchases)} ta)</b>")
+        lines.append("")
+        for i, p in enumerate(phone_purchases, 1):
+            returned = " <i>(qaytarilgan)</i>" if p.get('is_returned') else ""
+            lines.append(f"<b>{i}. {p['item']}</b>{returned}")
+            lines.append(f"   💰 {p['price']}  📅 {p['date']}")
+            if not p.get('is_returned'):
+                try:
+                    sale_date    = datetime.strptime(p['date'], '%d.%m.%Y').date()
+                    warranty_end = sale_date + timedelta(days=365)
+                    days_left    = (warranty_end - datetime.now().date()).days
+                    if days_left > 30:
+                        lines.append(f"   🛡 Kafolat: <b>{days_left} kun</b> qoldi ✅")
+                    elif days_left > 0:
+                        lines.append(f"   🛡 Kafolat: <b>{days_left} kun</b> qoldi ⚠️")
+                    else:
+                        lines.append(f"   🛡 Kafolat: tugagan ❌")
+                except Exception:
+                    pass
+            lines.append("")
+
+    if acc_purchases:
+        lines.append("━━━━━━━━━━━━━━━━━━━")
+        lines.append(f"🎧 <b>AKSESSUARLAR ({len(acc_purchases)} ta)</b>")
+        lines.append("")
+        for p in acc_purchases:
+            lines.append(f"• {p['item']} — {p['price']} — {p['date']}")
+
+    text = "\n".join(lines)
+    if len(text) <= 4096:
+        await message.answer(text, parse_mode="HTML", reply_markup=admin_kb())
+    else:
+        mid = len(lines) // 2
+        await message.answer("\n".join(lines[:mid]), parse_mode="HTML")
+        await message.answer("\n".join(lines[mid:]), parse_mode="HTML", reply_markup=admin_kb())
+
+    await state.finish()
 
 
 # ============================================

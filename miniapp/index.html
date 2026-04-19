@@ -1,0 +1,1628 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>SEPTECH — iPhone Narxlash</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    /* ===== RESET & BASE ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         var(--tg-theme-bg-color, #ffffff);
+      --bg2:        var(--tg-theme-secondary-bg-color, #f4f4f5);
+      --text:       var(--tg-theme-text-color, #111111);
+      --hint:       var(--tg-theme-hint-color, #8e8e93);
+      --link:       var(--tg-theme-link-color, #007aff);
+      --btn:        var(--tg-theme-button-color, #007aff);
+      --btn-text:   var(--tg-theme-button-text-color, #ffffff);
+      --accent:     #007aff;
+      --green:      #34c759;
+      --red:        #ff3b30;
+      --orange:     #ff9500;
+      --radius:     14px;
+      --radius-sm:  10px;
+      --shadow:     0 2px 12px rgba(0,0,0,.08);
+      --transition: .22s cubic-bezier(.4,0,.2,1);
+    }
+
+    html, body {
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 16px;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    /* ===== APP SHELL ===== */
+    #app {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+
+    /* ===== SCREENS ===== */
+    .screen {
+      display: none;
+      flex-direction: column;
+      flex: 1;
+      animation: fadeIn .2s ease;
+    }
+    .screen.active { display: flex; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ===== HEADER ===== */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 16px 12px;
+      background: var(--bg);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .header-back {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: var(--bg2);
+      border: none;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--btn);
+      font-size: 18px;
+      flex-shrink: 0;
+      transition: opacity var(--transition);
+    }
+    .header-back:active { opacity: .6; }
+    .header-title {
+      font-size: 17px;
+      font-weight: 600;
+      flex: 1;
+    }
+
+    /* ===== HERO (HOME) ===== */
+    .hero {
+      background: linear-gradient(135deg, #0a84ff 0%, #5e5ce6 100%);
+      padding: 28px 20px 24px;
+      color: #fff;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::after {
+      content: '';
+      position: absolute;
+      right: -30px; top: -30px;
+      width: 160px; height: 160px;
+      border-radius: 50%;
+      background: rgba(255,255,255,.08);
+    }
+    .hero-name {
+      font-size: 14px;
+      opacity: .85;
+      margin-bottom: 4px;
+    }
+    .hero-greeting {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 18px;
+    }
+    .hero-cards {
+      display: flex;
+      gap: 10px;
+    }
+    .hero-card {
+      flex: 1;
+      background: rgba(255,255,255,.18);
+      border-radius: 12px;
+      padding: 12px 14px;
+      backdrop-filter: blur(8px);
+    }
+    .hero-card-label {
+      font-size: 11px;
+      opacity: .8;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin-bottom: 4px;
+    }
+    .hero-card-value {
+      font-size: 22px;
+      font-weight: 700;
+    }
+    .hero-card-unit {
+      font-size: 12px;
+      opacity: .8;
+    }
+
+    /* ===== SECTION ===== */
+    .section {
+      padding: 16px 16px 0;
+    }
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--hint);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin-bottom: 10px;
+    }
+
+    /* ===== GRID MENU ===== */
+    .menu-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      padding: 16px 16px 8px;
+    }
+    .menu-card {
+      background: var(--bg2);
+      border-radius: var(--radius);
+      padding: 18px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      cursor: pointer;
+      border: none;
+      text-align: left;
+      color: var(--text);
+      transition: transform var(--transition), opacity var(--transition);
+      position: relative;
+      overflow: hidden;
+    }
+    .menu-card.primary {
+      background: var(--btn);
+      color: var(--btn-text);
+      grid-column: 1 / -1;
+    }
+    .menu-card:active { transform: scale(.97); opacity: .9; }
+    .menu-icon {
+      font-size: 26px;
+      line-height: 1;
+    }
+    .menu-label {
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .menu-desc {
+      font-size: 12px;
+      opacity: .65;
+    }
+
+    /* ===== LIST ITEMS ===== */
+    .list {
+      background: var(--bg2);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .list-item {
+      display: flex;
+      align-items: center;
+      padding: 14px 16px;
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      width: 100%;
+      text-align: left;
+      color: var(--text);
+      gap: 12px;
+      position: relative;
+      transition: opacity var(--transition);
+    }
+    .list-item:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 56px; right: 0;
+      height: 1px;
+      background: var(--bg);
+      opacity: .6;
+    }
+    .list-item:active { opacity: .6; }
+    .list-icon {
+      width: 36px; height: 36px;
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .list-content { flex: 1; min-width: 0; }
+    .list-label {
+      font-size: 15px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .list-sub {
+      font-size: 12px;
+      color: var(--hint);
+      margin-top: 2px;
+    }
+    .list-chevron {
+      color: var(--hint);
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+    .list-badge {
+      background: var(--btn);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 20px;
+      flex-shrink: 0;
+    }
+
+    /* ===== STEP FLOW (PRICING) ===== */
+    .step-progress {
+      display: flex;
+      gap: 4px;
+      padding: 12px 16px 0;
+    }
+    .step-dot {
+      flex: 1;
+      height: 3px;
+      border-radius: 2px;
+      background: var(--bg2);
+      transition: background var(--transition);
+    }
+    .step-dot.done { background: var(--btn); }
+    .step-dot.active { background: var(--btn); opacity: .5; }
+
+    .step-question {
+      font-size: 20px;
+      font-weight: 700;
+      padding: 20px 16px 8px;
+      line-height: 1.3;
+    }
+    .step-hint {
+      font-size: 13px;
+      color: var(--hint);
+      padding: 0 16px 16px;
+    }
+
+    /* ===== OPTION GRID ===== */
+    .option-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+      gap: 8px;
+      padding: 0 16px 24px;
+    }
+    .option-btn {
+      padding: 14px 8px;
+      border-radius: var(--radius-sm);
+      background: var(--bg2);
+      border: 2px solid transparent;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+      text-align: center;
+      transition: all var(--transition);
+      line-height: 1.3;
+    }
+    .option-btn.selected {
+      border-color: var(--btn);
+      background: rgba(0,122,255,.1);
+      color: var(--btn);
+    }
+    .option-btn:active { opacity: .7; }
+
+    /* ===== PARTS GRID ===== */
+    .parts-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      padding: 0 16px 16px;
+    }
+    .part-btn {
+      padding: 14px 12px;
+      border-radius: var(--radius-sm);
+      background: var(--bg2);
+      border: 2px solid transparent;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+      text-align: left;
+      transition: all var(--transition);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .part-btn.selected {
+      border-color: var(--orange);
+      background: rgba(255,149,0,.1);
+      color: var(--orange);
+    }
+    .part-btn .part-check {
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      border: 2px solid var(--hint);
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px;
+      color: transparent;
+    }
+    .part-btn.selected .part-check {
+      background: var(--orange);
+      border-color: var(--orange);
+      color: #fff;
+    }
+
+    /* ===== RESULT CARD ===== */
+    .result-card {
+      margin: 16px;
+      background: linear-gradient(135deg, #0a84ff, #5e5ce6);
+      border-radius: 20px;
+      padding: 28px 24px;
+      color: #fff;
+      text-align: center;
+    }
+    .result-label {
+      font-size: 13px;
+      opacity: .8;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin-bottom: 8px;
+    }
+    .result-price {
+      font-size: 42px;
+      font-weight: 800;
+      line-height: 1.1;
+      margin-bottom: 4px;
+    }
+    .result-model {
+      font-size: 15px;
+      opacity: .85;
+    }
+
+    .result-details {
+      margin: 0 16px 16px;
+      background: var(--bg2);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .result-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      font-size: 14px;
+    }
+    .result-row:not(:last-child) {
+      border-bottom: 1px solid var(--bg);
+    }
+    .result-row-label { color: var(--hint); }
+    .result-row-value { font-weight: 500; }
+
+    /* ===== TARIFF CARDS ===== */
+    .tariff-list {
+      padding: 0 16px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .tariff-card {
+      background: var(--bg2);
+      border-radius: var(--radius);
+      padding: 18px;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: all var(--transition);
+    }
+    .tariff-card.popular {
+      border-color: var(--btn);
+      background: rgba(0,122,255,.06);
+    }
+    .tariff-card:active { opacity: .8; }
+    .tariff-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+    .tariff-name {
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .tariff-badge {
+      font-size: 11px;
+      font-weight: 700;
+      background: var(--btn);
+      color: #fff;
+      padding: 3px 10px;
+      border-radius: 20px;
+    }
+    .tariff-price {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--btn);
+    }
+    .tariff-per {
+      font-size: 12px;
+      color: var(--hint);
+      margin-top: 2px;
+    }
+
+    /* ===== BOTTOM ACTION ===== */
+    .bottom-action {
+      padding: 12px 16px;
+      padding-bottom: max(12px, env(safe-area-inset-bottom));
+      background: var(--bg);
+      position: sticky;
+      bottom: 0;
+    }
+
+    /* ===== BUTTON ===== */
+    .btn {
+      width: 100%;
+      padding: 15px;
+      border-radius: var(--radius);
+      border: none;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity var(--transition), transform var(--transition);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .btn:active { opacity: .8; transform: scale(.99); }
+    .btn-primary { background: var(--btn); color: var(--btn-text); }
+    .btn-secondary { background: var(--bg2); color: var(--text); }
+    .btn-success { background: var(--green); color: #fff; }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* ===== INFO BLOCK ===== */
+    .info-block {
+      margin: 0 16px 16px;
+      background: var(--bg2);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+    .info-block p {
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+    .info-block p:last-child { margin-bottom: 0; }
+    .info-block strong { color: var(--btn); }
+
+    /* ===== CONTACT ITEM ===== */
+    .contact-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+    }
+    .contact-icon {
+      width: 40px; height: 40px;
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+
+    /* ===== ACCOUNT ===== */
+    .account-hero {
+      background: var(--bg2);
+      margin: 0 16px 16px;
+      border-radius: var(--radius);
+      padding: 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .account-avatar {
+      width: 56px; height: 56px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #0a84ff, #5e5ce6);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+      font-weight: 700;
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .account-name { font-size: 17px; font-weight: 600; }
+    .account-id { font-size: 12px; color: var(--hint); margin-top: 2px; }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      padding: 0 16px 16px;
+    }
+    .stat-card {
+      background: var(--bg2);
+      border-radius: var(--radius);
+      padding: 16px;
+      text-align: center;
+    }
+    .stat-value {
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--btn);
+    }
+    .stat-label {
+      font-size: 12px;
+      color: var(--hint);
+      margin-top: 4px;
+    }
+
+    /* ===== HISTORY ===== */
+    .history-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 16px;
+    }
+    .history-item:not(:last-child) {
+      border-bottom: 1px solid var(--bg);
+    }
+    .history-model { font-size: 14px; font-weight: 500; }
+    .history-meta { font-size: 12px; color: var(--hint); margin-top: 2px; }
+    .history-price { font-size: 15px; font-weight: 600; color: var(--btn); }
+
+    /* ===== PURCHASE CARD ===== */
+    .purchase-card {
+      margin: 0 16px 10px;
+      background: var(--bg2);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+    .purchase-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .purchase-model { font-size: 16px; font-weight: 600; }
+    .purchase-status {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 20px;
+    }
+    .status-ok { background: rgba(52,199,89,.15); color: var(--green); }
+    .status-pending { background: rgba(255,149,0,.15); color: var(--orange); }
+    .purchase-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      color: var(--hint);
+      margin-top: 4px;
+    }
+    .purchase-price { font-size: 18px; font-weight: 700; color: var(--btn); margin-top: 10px; }
+
+    /* ===== LOADING ===== */
+    .loader {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      flex-direction: column;
+      gap: 12px;
+      padding: 40px;
+    }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid var(--bg2);
+      border-top-color: var(--btn);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loader-text { font-size: 14px; color: var(--hint); }
+
+    /* ===== EMPTY STATE ===== */
+    .empty {
+      text-align: center;
+      padding: 48px 24px;
+      color: var(--hint);
+    }
+    .empty-icon { font-size: 48px; margin-bottom: 12px; }
+    .empty-title { font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+    .empty-text { font-size: 14px; line-height: 1.5; }
+
+    /* ===== TOAST ===== */
+    .toast {
+      position: fixed;
+      bottom: 80px; left: 50%; transform: translateX(-50%) translateY(20px);
+      background: rgba(0,0,0,.8);
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 24px;
+      font-size: 14px;
+      font-weight: 500;
+      opacity: 0;
+      transition: all .3s;
+      z-index: 1000;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ===== PAYMENT WAITING ===== */
+    .payment-waiting {
+      text-align: center;
+      padding: 32px 24px;
+    }
+    .payment-icon {
+      font-size: 52px;
+      margin-bottom: 16px;
+    }
+    .payment-title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .payment-text {
+      font-size: 14px;
+      color: var(--hint);
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+    .payment-amount {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--btn);
+      margin-bottom: 4px;
+    }
+    .payment-count {
+      font-size: 14px;
+      color: var(--hint);
+      margin-bottom: 24px;
+    }
+
+    .scrollable { overflow-y: auto; flex: 1; -webkit-overflow-scrolling: touch; }
+    .pb-safe { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ==================== SCREEN: HOME ==================== -->
+  <div class="screen active" id="screen-home">
+    <div class="hero">
+      <div class="hero-name" id="hero-name">Yuklanmoqda...</div>
+      <div class="hero-greeting">Xush kelibsiz! 👋</div>
+      <div class="hero-cards">
+        <div class="hero-card">
+          <div class="hero-card-label">Bepul</div>
+          <div>
+            <span class="hero-card-value" id="balance-free">—</span>
+            <span class="hero-card-unit"> ta</span>
+          </div>
+        </div>
+        <div class="hero-card">
+          <div class="hero-card-label">Pullik</div>
+          <div>
+            <span class="hero-card-value" id="balance-paid">—</span>
+            <span class="hero-card-unit"> ta</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scrollable pb-safe">
+      <div class="menu-grid">
+        <button class="menu-card primary" onclick="App.goTo('pricing')">
+          <div class="menu-icon">📱</div>
+          <div class="menu-label">Telefon narxlash</div>
+          <div class="menu-desc">iPhone bozor qiymatini bilish</div>
+        </button>
+        <button class="menu-card" onclick="App.goTo('topup')">
+          <div class="menu-icon">💰</div>
+          <div class="menu-label">Hisob to'ldirish</div>
+          <div class="menu-desc">Balans qo'shish</div>
+        </button>
+        <button class="menu-card" onclick="App.goTo('account')">
+          <div class="menu-icon">👤</div>
+          <div class="menu-label">Mening hisobim</div>
+          <div class="menu-desc">Balans va tarix</div>
+        </button>
+        <button class="menu-card" onclick="App.goTo('purchases')">
+          <div class="menu-icon">🛍</div>
+          <div class="menu-label">Xaridlarim</div>
+          <div class="menu-desc">Do'kondagi xaridlar</div>
+        </button>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Ma'lumot</div>
+        <div class="list">
+          <button class="list-item" onclick="App.goTo('about')">
+            <div class="list-icon" style="background:rgba(0,122,255,.12)">ℹ️</div>
+            <div class="list-content">
+              <div class="list-label">Biz haqimizda</div>
+              <div class="list-sub">SEPTECH — telefon narxining standarti</div>
+            </div>
+            <div class="list-chevron">›</div>
+          </button>
+          <a class="list-item" href="https://t.me/sebtech1" target="_blank" style="text-decoration:none;color:inherit">
+            <div class="list-icon" style="background:rgba(0,122,255,.12)">📢</div>
+            <div class="list-content">
+              <div class="list-label">Telegram kanal</div>
+              <div class="list-sub">@sebtech1</div>
+            </div>
+            <div class="list-chevron">›</div>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: PRICING ==================== -->
+  <div class="screen" id="screen-pricing">
+    <div class="header">
+      <button class="header-back" onclick="App.pricingBack()">‹</button>
+      <div class="header-title" id="pricing-title">Model tanlang</div>
+    </div>
+
+    <div class="step-progress" id="step-progress"></div>
+
+    <div class="scrollable pb-safe" id="pricing-body">
+      <div class="loader">
+        <div class="spinner"></div>
+        <div class="loader-text">Yuklanmoqda...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: RESULT ==================== -->
+  <div class="screen" id="screen-result">
+    <div class="header">
+      <button class="header-back" onclick="App.goTo('home')">‹</button>
+      <div class="header-title">Narx natijasi</div>
+    </div>
+    <div class="scrollable pb-safe">
+      <div class="result-card" id="result-card">
+        <div class="result-label">Taxminiy bozor narxi</div>
+        <div class="result-price" id="result-price">—</div>
+        <div class="result-model" id="result-model-name">—</div>
+      </div>
+      <div class="result-details" id="result-details"></div>
+      <div style="padding:0 16px 24px">
+        <button class="btn btn-primary" onclick="App.newPricing()">
+          ➕ Yangi narxlash
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: TOP UP ==================== -->
+  <div class="screen" id="screen-topup">
+    <div class="header">
+      <button class="header-back" onclick="App.goTo('home')">‹</button>
+      <div class="header-title">Hisob to'ldirish</div>
+    </div>
+    <div class="scrollable pb-safe">
+      <div style="padding:16px 16px 8px">
+        <div class="info-block">
+          <p>Har bir tarif <strong>narxlash huquqi</strong> beradi.<br>
+          Bepul urinishlar tugagach ishlatiladi.</p>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-title">Tariflar</div>
+      </div>
+      <div class="tariff-list" id="tariff-list">
+        <div class="loader">
+          <div class="spinner"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: PAYMENT WAITING ==================== -->
+  <div class="screen" id="screen-payment">
+    <div class="header">
+      <button class="header-back" onclick="App.goTo('topup')">‹</button>
+      <div class="header-title">To'lov</div>
+    </div>
+    <div class="scrollable pb-safe">
+      <div class="payment-waiting">
+        <div class="payment-icon">💳</div>
+        <div class="payment-title" id="pay-title">To'lov kutilmoqda</div>
+        <div class="payment-amount" id="pay-amount">—</div>
+        <div class="payment-count" id="pay-count">—</div>
+        <div class="payment-text">
+          To'lov sahifasi ochildi.<br>
+          To'lovni amalga oshirgach, tasdiqlash tugmasini bosing.
+        </div>
+        <button class="btn btn-primary" id="pay-check-btn" onclick="App.checkPayment()">
+          ✅ To'lovni tasdiqlash
+        </button>
+        <div style="height:12px"></div>
+        <button class="btn btn-secondary" id="pay-open-btn" onclick="App.openPayUrl()">
+          🔗 To'lov sahifasini ochish
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: ACCOUNT ==================== -->
+  <div class="screen" id="screen-account">
+    <div class="header">
+      <button class="header-back" onclick="App.goTo('home')">‹</button>
+      <div class="header-title">Mening hisobim</div>
+    </div>
+    <div class="scrollable pb-safe">
+      <div class="account-hero">
+        <div class="account-avatar" id="acc-avatar">?</div>
+        <div>
+          <div class="account-name" id="acc-name">—</div>
+          <div class="account-id" id="acc-id">ID: —</div>
+        </div>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-value" id="acc-free">—</div>
+          <div class="stat-label">Bepul urinish</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="acc-paid">—</div>
+          <div class="stat-label">Pullik balans</div>
+        </div>
+        <div class="stat-card" style="grid-column:1/-1">
+          <div class="stat-value" id="acc-total">—</div>
+          <div class="stat-label">Jami narxlashlar</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Oxirgi narxlashlar</div>
+      </div>
+      <div class="list" style="margin:0 16px 24px" id="acc-history">
+        <div class="loader"><div class="spinner"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: PURCHASES ==================== -->
+  <div class="screen" id="screen-purchases">
+    <div class="header">
+      <button class="header-back" onclick="App.goTo('home')">‹</button>
+      <div class="header-title">Mening xaridlarim</div>
+    </div>
+    <div class="scrollable pb-safe" id="purchases-body">
+      <div class="loader">
+        <div class="spinner"></div>
+        <div class="loader-text">Yuklanmoqda...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: ABOUT ==================== -->
+  <div class="screen" id="screen-about">
+    <div class="header">
+      <button class="header-back" onclick="App.goTo('home')">‹</button>
+      <div class="header-title">Biz haqimizda</div>
+    </div>
+    <div class="scrollable pb-safe">
+      <div class="info-block" style="margin-top:16px">
+        <p><strong>SEPTECH</strong> — iPhone narxlash standarti.</p>
+        <p>Real savdo tajribasi + bozor tahlillari asosida ishlaydi. Inson aralashuvisiz — faqat algoritm.</p>
+        <p><strong>Shaffoflik • Aniqlik • Ishonch</strong></p>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Aloqa</div>
+      </div>
+      <div class="list" style="margin:0 16px 16px">
+        <a class="list-item" href="https://t.me/sebtech1" target="_blank" style="text-decoration:none;color:inherit">
+          <div class="list-icon" style="background:rgba(0,122,255,.12)">📢</div>
+          <div class="list-content">
+            <div class="list-label">Telegram kanal</div>
+            <div class="list-sub">@sebtech1</div>
+          </div>
+          <div class="list-chevron">›</div>
+        </a>
+        <a class="list-item" href="https://www.instagram.com/sebtech.uz" target="_blank" style="text-decoration:none;color:inherit">
+          <div class="list-icon" style="background:rgba(255,45,85,.12)">📸</div>
+          <div class="list-content">
+            <div class="list-label">Instagram</div>
+            <div class="list-sub">@sebtech.uz</div>
+          </div>
+          <div class="list-chevron">›</div>
+        </a>
+        <a class="list-item" href="tel:+998772859999" style="text-decoration:none;color:inherit">
+          <div class="list-icon" style="background:rgba(52,199,89,.12)">📞</div>
+          <div class="list-content">
+            <div class="list-label">+998 (77) 285-99-99</div>
+            <div class="list-sub">Call-center</div>
+          </div>
+          <div class="list-chevron">›</div>
+        </a>
+        <a class="list-item" href="tel:+998912859999" style="text-decoration:none;color:inherit">
+          <div class="list-icon" style="background:rgba(52,199,89,.12)">📞</div>
+          <div class="list-content">
+            <div class="list-label">+998 (91) 285-99-99</div>
+            <div class="list-sub">Call-center</div>
+          </div>
+          <div class="list-chevron">›</div>
+        </a>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /#app -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ===================================================================
+// CONFIG
+// ===================================================================
+const API = 'https://sebmarket.uz/api/payments';
+const DJANGO = 'https://sebmarket.uz';
+const MINIAPP_API = `${DJANGO}/api/miniapp`;
+
+// ===================================================================
+// TELEGRAM WEB APP
+// ===================================================================
+const tg = window.Telegram.WebApp;
+tg.ready();
+tg.expand();
+
+const TG_USER = tg.initDataUnsafe?.user || null;
+
+// ===================================================================
+// STATE
+// ===================================================================
+const State = {
+  user: null,
+  balance: { free: 0, paid: 0, total: 0 },
+  pricing: {
+    step: 0,
+    models: [],
+    storages: [],
+    colors: [],
+    batteries: [],
+    selected: {
+      model: null,    // {id, name}
+      storage: null,
+      color: null,
+      battery: null,
+      sim: null,
+      box: null,
+      parts: []
+    }
+  },
+  payment: {
+    orderId: null,
+    url: null,
+    amount: 0,
+    count: 0,
+    tariffName: ''
+  }
+};
+
+const STEPS = ['model','storage','color','battery','sim','box','parts'];
+const STEP_TITLES = {
+  model:   'Model tanlang',
+  storage: 'Xotira hajmi',
+  color:   'Rang tanlang',
+  battery: 'Batareya holati',
+  sim:     'SIM turi',
+  box:     'Qutisi bormi?',
+  parts:   'Shikastlangan qismlar'
+};
+const PARTS = {
+  battery:    'Batareya',
+  back_cover: 'Krishka',
+  face_id:    'Face ID',
+  glass:      'Oyna',
+  screen:     'Ekran',
+  camera:     'Kamera',
+  broken:     'Qirilgan',
+  body:       'Korpus'
+};
+
+// ===================================================================
+// UTILS
+// ===================================================================
+function showToast(msg, dur = 2200) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), dur);
+}
+
+function haptic(type = 'light') {
+  try { tg.HapticFeedback.impactOccurred(type); } catch {}
+}
+
+async function request(method, url, data) {
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json' }
+  };
+  if (data) opts.body = JSON.stringify(data);
+  const r = await fetch(url, opts);
+  return r.json();
+}
+
+function iphone14Plus(name) {
+  const m = (name || '').toLowerCase().match(/iphone\s+(\d+)/);
+  return m && parseInt(m[1]) >= 14;
+}
+
+// ===================================================================
+// APP CONTROLLER
+// ===================================================================
+const App = {
+
+  // ---------- NAVIGATION ----------
+  goTo(screen) {
+    haptic('light');
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(`screen-${screen}`).classList.add('active');
+    if (screen === 'account')   App.loadAccount();
+    if (screen === 'purchases') App.loadPurchases();
+    if (screen === 'topup')     App.loadTariffs();
+    if (screen === 'pricing')   App.startPricing();
+    if (screen === 'home')      App.refreshBalance();
+  },
+
+  // ---------- INIT ----------
+  async init() {
+    if (!TG_USER) {
+      document.getElementById('hero-name').textContent = 'Demo rejim';
+      return;
+    }
+    document.getElementById('hero-name').textContent = TG_USER.first_name;
+
+    try {
+      const res = await request('POST', `${API}/user/create/`, {
+        telegram_id: TG_USER.id,
+        full_name: `${TG_USER.first_name} ${TG_USER.last_name || ''}`.trim(),
+        username: TG_USER.username || ''
+      });
+      if (res.success) {
+        State.user = res;
+        App.refreshBalance();
+      }
+    } catch (e) {
+      console.error('Init error:', e);
+    }
+  },
+
+  async refreshBalance() {
+    if (!TG_USER) return;
+    try {
+      const res = await request('GET', `${API}/user/${TG_USER.id}/balance/`);
+      if (res.success) {
+        State.balance.paid = res.balance || 0;
+        // bepulni local db dan olinadi, bu yerda API qaytarmasa 0
+        document.getElementById('balance-free').textContent = State.balance.free;
+        document.getElementById('balance-paid').textContent = State.balance.paid;
+      }
+    } catch {}
+  },
+
+  // ---------- PRICING ----------
+  startPricing() {
+    const s = State.pricing;
+    s.step = 0;
+    s.selected = { model:null, storage:null, color:null,
+                   battery:null, sim:null, box:null, parts:[] };
+    App.loadPricingStep();
+  },
+
+  pricingBack() {
+    const s = State.pricing;
+    if (s.step === 0) { App.goTo('home'); return; }
+    s.step--;
+    // sim skip agar kerak bo'lmasa
+    if (s.step === 4 && !iphone14Plus(s.selected.model?.name)) s.step--;
+    App.renderPricingStep();
+  },
+
+  async loadPricingStep() {
+    document.getElementById('pricing-body').innerHTML =
+      `<div class="loader"><div class="spinner"></div><div class="loader-text">Yuklanmoqda...</div></div>`;
+
+    try {
+      const models = await request('GET', `${MINIAPP_API}/models/`);
+      State.pricing.models = models.results || models || [];
+    } catch {
+      State.pricing.models = [];
+    }
+    App.renderPricingStep();
+  },
+
+  renderPricingStep() {
+    const s = State.pricing;
+    const step = STEPS[s.step];
+    const total = iphone14Plus(s.selected.model?.name) ? 7 : 6;
+    const actualStep = s.step;
+
+    // progress
+    let prog = '';
+    for (let i = 0; i < total; i++) {
+      const cls = i < actualStep ? 'done' : i === actualStep ? 'active' : '';
+      prog += `<div class="step-dot ${cls}"></div>`;
+    }
+    document.getElementById('step-progress').innerHTML = prog;
+    document.getElementById('pricing-title').textContent = STEP_TITLES[step];
+
+    const body = document.getElementById('pricing-body');
+    body.innerHTML = '';
+
+    if (step === 'model') {
+      body.innerHTML = App._questionHtml('Qaysi model?');
+      const grid = document.createElement('div');
+      grid.className = 'option-grid';
+      (s.models || []).forEach(m => {
+        const b = document.createElement('button');
+        b.className = 'option-btn' + (s.selected.model?.id === m.id ? ' selected' : '');
+        b.textContent = m.name;
+        b.onclick = () => App.selectModel(m);
+        grid.appendChild(b);
+      });
+      body.appendChild(grid);
+
+    } else if (step === 'storage') {
+      body.innerHTML = App._questionHtml('Xotira hajmi qancha?');
+      const grid = document.createElement('div');
+      grid.className = 'option-grid';
+      (s.storages || []).forEach(st => {
+        const b = document.createElement('button');
+        b.className = 'option-btn' + (s.selected.storage === st.size ? ' selected' : '');
+        b.textContent = st.size;
+        b.onclick = () => App.selectOption('storage', st.size, 5);
+        grid.appendChild(b);
+      });
+      body.appendChild(grid);
+
+    } else if (step === 'color') {
+      body.innerHTML = App._questionHtml('Rangi qanday?');
+      const grid = document.createElement('div');
+      grid.className = 'option-grid';
+      (s.colors || []).forEach(c => {
+        const b = document.createElement('button');
+        b.className = 'option-btn' + (s.selected.color === c.name ? ' selected' : '');
+        b.textContent = c.name;
+        b.onclick = () => App.selectOption('color', c.name, 6);
+        grid.appendChild(b);
+      });
+      body.appendChild(grid);
+
+    } else if (step === 'battery') {
+      body.innerHTML = App._questionHtml('Batareya necha foiz?');
+      const grid = document.createElement('div');
+      grid.className = 'option-grid';
+      (s.batteries || []).forEach(bat => {
+        const b = document.createElement('button');
+        b.className = 'option-btn' + (s.selected.battery === bat.label ? ' selected' : '');
+        b.textContent = bat.label;
+        b.onclick = () => App.selectOption('battery', bat.label, iphone14Plus(s.selected.model?.name) ? 4 : 5);
+        grid.appendChild(b);
+      });
+      body.appendChild(grid);
+
+    } else if (step === 'sim') {
+      body.innerHTML = App._questionHtml('SIM turi qanday?', 'iPhone 14 va undan yuqori modellar uchun');
+      const grid = document.createElement('div');
+      grid.className = 'option-grid';
+      [
+        { val: 'physical', label: 'Fizik SIM', sub: 'SIM karta' },
+        { val: 'esim',     label: 'eSIM',      sub: 'Virtual' },
+        { val: 'dual',     label: 'Dual SIM',  sub: '2 ta SIM' }
+      ].forEach(sim => {
+        const b = document.createElement('button');
+        b.className = 'option-btn' + (s.selected.sim === sim.val ? ' selected' : '');
+        b.innerHTML = `${sim.label}<br><span style="font-size:11px;opacity:.6">${sim.sub}</span>`;
+        b.onclick = () => App.selectOption('sim', sim.val, 5);
+        grid.appendChild(b);
+      });
+      body.appendChild(grid);
+
+    } else if (step === 'box') {
+      body.innerHTML = App._questionHtml('Qutisi bormi?');
+      const grid = document.createElement('div');
+      grid.className = 'option-grid';
+      [
+        { val: "Ha",   label: "📦 Ha",   sub: "Quti bor" },
+        { val: "Yo'q", label: "❌ Yo'q", sub: "Quti yo'q" }
+      ].forEach(opt => {
+        const b = document.createElement('button');
+        b.className = 'option-btn' + (s.selected.box === opt.val ? ' selected' : '');
+        b.innerHTML = `${opt.label}<br><span style="font-size:11px;opacity:.6">${opt.sub}</span>`;
+        b.onclick = () => App.selectOption('box', opt.val, 6);
+        grid.appendChild(b);
+      });
+      body.appendChild(grid);
+
+    } else if (step === 'parts') {
+      body.innerHTML = App._questionHtml('Shikastlangan qismlar?', 'Bir nechta tanlash mumkin. Yo\'q bo\'lsa "Hech qaysi" ni tanlang.');
+      const grid = document.createElement('div');
+      grid.className = 'parts-grid';
+      Object.entries(PARTS).forEach(([key, label]) => {
+        const b = document.createElement('button');
+        const sel = s.selected.parts.includes(key);
+        b.className = 'part-btn' + (sel ? ' selected' : '');
+        b.innerHTML = `<div class="part-check">${sel ? '✓' : ''}</div>${label}`;
+        b.onclick = () => App.togglePart(key);
+        grid.appendChild(b);
+      });
+      // Hech qaysi
+      const none = document.createElement('button');
+      const noneSelected = s.selected.parts.length === 0;
+      none.className = 'part-btn' + (noneSelected ? ' selected' : '');
+      none.style.gridColumn = '1 / -1';
+      none.innerHTML = `<div class="part-check" style="background:${noneSelected ? 'var(--green)' : ''}; border-color:${noneSelected ? 'var(--green)' : ''}">${noneSelected ? '✓' : ''}</div>Hech qaysi (yangi holat)`;
+      none.onclick = () => { s.selected.parts = []; App.renderPricingStep(); };
+      grid.appendChild(none);
+      body.appendChild(grid);
+
+      // Davom etish tugmasi
+      const action = document.createElement('div');
+      action.className = 'bottom-action';
+      action.innerHTML = `<button class="btn btn-primary" onclick="App.submitPricing()">Narxni bilish →</button>`;
+      body.appendChild(action);
+    }
+  },
+
+  _questionHtml(q, hint = '') {
+    return `<div class="step-question">${q}</div>
+            ${hint ? `<div class="step-hint">${hint}</div>` : ''}`;
+  },
+
+  async selectModel(model) {
+    haptic('light');
+    const s = State.pricing;
+    s.selected.model = model;
+    s.step = 1;
+
+    // Loader
+    document.getElementById('pricing-body').innerHTML =
+      `<div class="loader"><div class="spinner"></div><div class="loader-text">Yuklanmoqda...</div></div>`;
+
+    try {
+      const [storRes, colRes, batRes] = await Promise.all([
+        request('GET', `${MINIAPP_API}/storages/?model_id=${model.id}`),
+        request('GET', `${MINIAPP_API}/colors/?model_id=${model.id}`),
+        request('GET', `${MINIAPP_API}/batteries/?model_id=${model.id}`)
+      ]);
+      s.storages  = storRes.results || storRes || [];
+      s.colors    = colRes.results  || colRes  || [];
+      s.batteries = batRes.results  || batRes  || [];
+    } catch {
+      s.storages = []; s.colors = []; s.batteries = [];
+    }
+    App.renderPricingStep();
+  },
+
+  selectOption(field, value, nextStep) {
+    haptic('light');
+    const s = State.pricing;
+    s.selected[field] = value;
+
+    // sim ni o'tkazib yuborish agar kerak bo'lmasa
+    let next = s.step + 1;
+    if (STEPS[next] === 'sim' && !iphone14Plus(s.selected.model?.name)) next++;
+    s.step = next;
+
+    App.renderPricingStep();
+  },
+
+  togglePart(key) {
+    haptic('light');
+    const parts = State.pricing.selected.parts;
+    const idx = parts.indexOf(key);
+    if (idx >= 0) parts.splice(idx, 1);
+    else parts.push(key);
+    App.renderPricingStep();
+  },
+
+  async submitPricing() {
+    haptic('medium');
+    const s = State.pricing.selected;
+
+    // Balans tekshirish
+    const can = await App.canPrice();
+    if (!can) {
+      showToast('Balans yetarli emas. Hisobni to\'ldiring!');
+      setTimeout(() => App.goTo('topup'), 1500);
+      return;
+    }
+
+    const damage = s.parts.length ? s.parts.join('+') : 'Yangi';
+
+    // Narx so'rash
+    let price = null;
+    try {
+      const res = await request('POST', `${MINIAPP_API}/price/`, {
+        model_id: s.model.id,
+        storage:  s.storage,
+        color:    s.color,
+        battery:  s.battery,
+        sim_type: s.sim || 'physical',
+        has_box:  s.box || "Yo'q",
+        damage
+      });
+      price = res.price || res.result || null;
+    } catch {}
+
+    // Balansni kamaytirish
+    if (TG_USER) {
+      try {
+        await request('POST', `${API}/pricing/use/`, {
+          telegram_id: TG_USER.id,
+          phone_model: s.model.name,
+          price: price || 0
+        });
+      } catch {}
+    }
+
+    // Natija ko'rsatish
+    App.showResult(price, s);
+  },
+
+  showResult(price, sel) {
+    const priceStr = price
+      ? `${Number(price).toLocaleString('en').replace(/,/g,' ')} $`
+      : 'Topilmadi';
+
+    document.getElementById('result-price').textContent = priceStr;
+    document.getElementById('result-model-name').textContent = sel.model.name;
+
+    const details = [
+      ['Model',    sel.model.name],
+      ['Xotira',   sel.storage],
+      ['Rang',     sel.color],
+      ['Batareya', sel.battery],
+      ['SIM',      sel.sim || 'Fizik'],
+      ['Quti',     sel.box],
+      ['Holat',    sel.parts.length ? sel.parts.map(p => PARTS[p]).join(', ') : 'Yangi']
+    ];
+
+    document.getElementById('result-details').innerHTML =
+      details.map(([l,v]) =>
+        `<div class="result-row">
+           <span class="result-row-label">${l}</span>
+           <span class="result-row-value">${v || '—'}</span>
+         </div>`
+      ).join('');
+
+    App.goTo('result');
+    haptic('success');
+  },
+
+  newPricing() { App.goTo('pricing'); },
+
+  async canPrice() {
+    if (!TG_USER) return false;
+    try {
+      const res = await request('GET', `${API}/user/${TG_USER.id}/balance/`);
+      return (res.balance || 0) > 0 || State.balance.free > 0;
+    } catch { return false; }
+  },
+
+  // ---------- TOP UP ----------
+  async loadTariffs() {
+    document.getElementById('tariff-list').innerHTML =
+      `<div class="loader"><div class="spinner"></div></div>`;
+    try {
+      const res = await request('GET', `${API}/tariffs/`);
+      const tariffs = res.tariffs || [];
+      App.renderTariffs(tariffs);
+    } catch {
+      App.renderTariffs([]);
+    }
+  },
+
+  renderTariffs(tariffs) {
+    if (!tariffs.length) {
+      document.getElementById('tariff-list').innerHTML =
+        `<div class="empty"><div class="empty-icon">😕</div><div class="empty-title">Tariflar topilmadi</div></div>`;
+      return;
+    }
+    document.getElementById('tariff-list').innerHTML = tariffs.map((t, i) => `
+      <div class="tariff-card ${i === 1 ? 'popular' : ''}" onclick="App.buyTariff(${t.id})">
+        <div class="tariff-header">
+          <div class="tariff-name">${t.name}</div>
+          ${i === 1 ? '<div class="tariff-badge">Mashhur</div>' : ''}
+        </div>
+        <div class="tariff-price">${Number(t.price).toLocaleString('uz')} so'm</div>
+        <div class="tariff-per">1 narxlash = ${Number(t.price_per_one).toLocaleString('uz')} so'm</div>
+      </div>
+    `).join('');
+  },
+
+  async buyTariff(tariffId) {
+    if (!TG_USER) { showToast('Telegram orqali kiring'); return; }
+    haptic('medium');
+    try {
+      const res = await request('POST', `${API}/payment/create/`, {
+        telegram_id: TG_USER.id,
+        tariff_id: tariffId
+      });
+      if (res.success && res.payment_url) {
+        State.payment = {
+          orderId: res.order_id,
+          url: res.payment_url,
+          amount: res.amount,
+          count: res.count,
+          tariffName: res.tariff_name
+        };
+
+        document.getElementById('pay-title').textContent = res.tariff_name;
+        document.getElementById('pay-amount').textContent =
+          `${Number(res.amount).toLocaleString('uz')} so'm`;
+        document.getElementById('pay-count').textContent =
+          `${res.count} ta narxlash huquqi`;
+
+        App.goTo('payment');
+        setTimeout(() => App.openPayUrl(), 800);
+      } else {
+        showToast('❌ ' + (res.error || 'Xatolik yuz berdi'));
+      }
+    } catch {
+      showToast('❌ Server bilan bog\'lanib bo\'lmadi');
+    }
+  },
+
+  openPayUrl() {
+    if (State.payment.url) tg.openLink(State.payment.url);
+  },
+
+  async checkPayment() {
+    const btn = document.getElementById('pay-check-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Tekshirilmoqda...';
+
+    try {
+      const res = await request('GET', `${API}/payment/status/${State.payment.orderId}/`);
+      if (res.success && res.has_payment && res.state === 2) {
+        haptic('success');
+        showToast('✅ To\'lov muvaffaqiyatli!');
+        State.balance.paid = res.balance || 0;
+        document.getElementById('balance-paid').textContent = State.balance.paid;
+        setTimeout(() => App.goTo('home'), 1500);
+      } else if (res.state === 1) {
+        showToast('⏳ To\'lov hali kelmadi. Biroz kutib ko\'ring.');
+        btn.disabled = false;
+        btn.textContent = '✅ To\'lovni tasdiqlash';
+      } else {
+        showToast('❌ To\'lov topilmadi');
+        btn.disabled = false;
+        btn.textContent = '✅ To\'lovni tasdiqlash';
+      }
+    } catch {
+      showToast('❌ Xatolik. Qaytadan urinib ko\'ring.');
+      btn.disabled = false;
+      btn.textContent = '✅ To\'lovni tasdiqlash';
+    }
+  },
+
+  // ---------- ACCOUNT ----------
+  async loadAccount() {
+    if (!TG_USER) return;
+    const name = `${TG_USER.first_name} ${TG_USER.last_name || ''}`.trim();
+    document.getElementById('acc-name').textContent = name;
+    document.getElementById('acc-id').textContent = `ID: ${TG_USER.id}`;
+    document.getElementById('acc-avatar').textContent =
+      (TG_USER.first_name || '?')[0].toUpperCase();
+
+    try {
+      const res = await request('GET', `${API}/user/${TG_USER.id}/balance/`);
+      if (res.success) {
+        document.getElementById('acc-paid').textContent = res.balance || 0;
+        document.getElementById('acc-free').textContent = State.balance.free;
+        document.getElementById('acc-total').textContent = res.total_pricings || 0;
+      }
+    } catch {}
+
+    // Tarix
+    try {
+      const res = await request('GET',
+        `${MINIAPP_API}/history/?telegram_id=${TG_USER.id}&limit=10`);
+      const hist = res.history || res.results || [];
+      if (!hist.length) {
+        document.getElementById('acc-history').innerHTML =
+          `<div class="empty"><div class="empty-icon">📋</div>
+           <div class="empty-title">Tarix yo'q</div>
+           <div class="empty-text">Hali narxlash amalga oshirilmagan</div></div>`;
+        return;
+      }
+      document.getElementById('acc-history').innerHTML =
+        hist.map(h => `
+          <div class="history-item">
+            <div>
+              <div class="history-model">${h.phone_model || '—'}</div>
+              <div class="history-meta">${h.storage || ''} · ${h.battery || ''} · ${h.created_at ? h.created_at.slice(0,10) : ''}</div>
+            </div>
+            <div class="history-price">${h.price ? Number(h.price).toLocaleString('en').replace(/,/g,' ') + ' $' : '—'}</div>
+          </div>
+        `).join('');
+    } catch {
+      document.getElementById('acc-history').innerHTML =
+        `<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-title">Tarix yuklanmadi</div></div>`;
+    }
+  },
+
+  // ---------- PURCHASES ----------
+  async loadPurchases() {
+    document.getElementById('purchases-body').innerHTML =
+      `<div class="loader"><div class="spinner"></div><div class="loader-text">Yuklanmoqda...</div></div>`;
+
+    // Telefon raqamini olish
+    let phone = null;
+    if (TG_USER) {
+      try {
+        const res = await request('GET', `${API}/user/${TG_USER.id}/balance/`);
+        phone = res.phone || null;
+      } catch {}
+    }
+
+    if (!phone) {
+      document.getElementById('purchases-body').innerHTML = `
+        <div class="empty">
+          <div class="empty-icon">📞</div>
+          <div class="empty-title">Telefon raqam topilmadi</div>
+          <div class="empty-text">Xaridlarni ko'rish uchun botda telefon raqamingizni ro'yxatdan o'tkazing</div>
+        </div>`;
+      return;
+    }
+
+    try {
+      const res = await request('GET',
+        `${DJANGO}/shops/api/customer/purchases/?phone=${encodeURIComponent(phone)}`);
+      const purchases = res.purchases || res.results || res || [];
+      if (!Array.isArray(purchases) || !purchases.length) {
+        document.getElementById('purchases-body').innerHTML = `
+          <div class="empty">
+            <div class="empty-icon">🛍</div>
+            <div class="empty-title">Xaridlar topilmadi</div>
+            <div class="empty-text">Hali xarid amalga oshirilmagan</div>
+          </div>`;
+        return;
+      }
+      document.getElementById('purchases-body').innerHTML =
+        `<div style="height:12px"></div>` +
+        purchases.map(p => `
+          <div class="purchase-card">
+            <div class="purchase-header">
+              <div class="purchase-model">${p.model || p.phone_model || '—'}</div>
+              <div class="purchase-status ${p.status === 'completed' ? 'status-ok' : 'status-pending'}">
+                ${p.status === 'completed' ? 'Amalga oshirildi' : 'Jarayonda'}
+              </div>
+            </div>
+            ${p.storage ? `<div class="purchase-row"><span>Xotira</span><span>${p.storage}</span></div>` : ''}
+            ${p.color ? `<div class="purchase-row"><span>Rang</span><span>${p.color}</span></div>` : ''}
+            ${p.date ? `<div class="purchase-row"><span>Sana</span><span>${String(p.date).slice(0,10)}</span></div>` : ''}
+            ${p.price ? `<div class="purchase-price">${Number(p.price).toLocaleString('en').replace(/,/g,' ')} $</div>` : ''}
+          </div>
+        `).join('') + `<div style="height:16px"></div>`;
+    } catch {
+      document.getElementById('purchases-body').innerHTML = `
+        <div class="empty">
+          <div class="empty-icon">⚠️</div>
+          <div class="empty-title">Xaridlar yuklanmadi</div>
+          <div class="empty-text">Server bilan bog'lanishda xatolik</div>
+        </div>`;
+    }
+  }
+};
+
+// ===================================================================
+// START
+// ===================================================================
+App.init();
+</script>
+</body>
+</html>

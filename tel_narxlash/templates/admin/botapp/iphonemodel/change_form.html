@@ -1,0 +1,16 @@
+<!-- templates/admin/botapp/iphonemodel/change_form.html -->
+{% extends "admin/change_form.html" %}
+{% load i18n static %}
+
+{% block object-tools-items %}
+    {{ block.super }}
+    {% if original %}
+    <li>
+        <a href="{% url 'admin:botapp_iphonemodel_auto_combinations' original.id %}"
+           class="historylink"
+           style="background:#1976d2;color:white;padding:8px 15px;border-radius:4px;text-decoration:none;display:inline-block;">
+            🎯 Avtomatik kombinatsiyalar yaratish
+        </a>
+    </li>
+    {% endif %}
+{% endblock %}

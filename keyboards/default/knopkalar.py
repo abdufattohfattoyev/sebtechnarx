@@ -1,5 +1,7 @@
 # keyboards/default/knopkalar.py - AIOGRAM 2.25.2
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+
+MINIAPP_URL = "https://seb-tech.uz/miniapp/"
 
 
 # ================ ASOSIY KLAVIATURALAR ================
@@ -15,6 +17,9 @@ def main_menu(is_admin=False):
     """Asosiy menyu - ODDIY FOYDALANUVCHI"""
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
 
+    # Mini App tugmasi — eng yuqorida
+    # kb.row(KeyboardButton("🌐 Mini App", web_app=WebAppInfo(url=MINIAPP_URL)))
+
     # Birinchi qator - Asosiy funksiyalar
     kb.row(KeyboardButton("📱 Telefon narxlash"))
 
@@ -24,7 +29,13 @@ def main_menu(is_admin=False):
         KeyboardButton("👤 Mening hisobim")
     )
 
-    # Uchinchi qator - Qo'shimcha
+    # Uchinchi qator - Xaridlar va kafolat
+    # kb.row(
+    #     KeyboardButton("🛍 Mening xaridlarim"),
+    #     KeyboardButton("🛡 Kafolat"),
+    # )
+
+    # To'rtinchi qator - Qo'shimcha
     kb.row(KeyboardButton("ℹ️ Biz haqimizda"))
 
     # Admin uchun alohida panel
@@ -148,6 +159,78 @@ def create_parts_inline_kb(selected_parts, parts_dict):
     return markup
 
 
+# ================ MANBA KLAVIATURASI ================
+
+# def source_inline_kb():
+#     """Qayerdan keldi — inline"""
+#     kb = InlineKeyboardMarkup(row_width=2)
+#     kb.add(
+#         InlineKeyboardButton("📱 Telegram",          callback_data="src_telegram"),
+#         InlineKeyboardButton("📸 Instagram",         callback_data="src_instagram"),
+#         InlineKeyboardButton("🤝 Do'st taklifi",     callback_data="src_referral"),
+#         InlineKeyboardButton("🚶 O'zi keldi",        callback_data="src_walkin"),
+#         InlineKeyboardButton("🔄 Avval ham kelgan",  callback_data="src_repeat"),
+#         InlineKeyboardButton("🔹 Boshqa",            callback_data="src_other"),
+#     )
+#     return kb
+
+
+# ================ BAHOLASH KLAVIATURASI ================
+
+# def rating_inline_kb(sale_id: int):
+#     """Sotuvchini baholash — 5 yulduz inline"""
+#     kb = InlineKeyboardMarkup(row_width=5)
+#     stars = ["⭐", "⭐⭐", "⭐⭐⭐", "⭐⭐⭐⭐", "⭐⭐⭐⭐⭐"]
+#     kb.row(*[
+#         InlineKeyboardButton(stars[i], callback_data=f"rate_{i+1}_{sale_id}")
+#         for i in range(5)
+#     ])
+#     kb.row(InlineKeyboardButton("⏭ O'tkazib yuborish", callback_data=f"rate_skip_{sale_id}"))
+#     return kb
+
+
+# def rating_comment_skip_kb(sale_id: int):
+#     """Izoh yoki o'tkazib yuborish"""
+#     kb = InlineKeyboardMarkup()
+#     kb.add(InlineKeyboardButton("⏭ Izoхsiz yuborish", callback_data=f"rate_nocomment_{sale_id}"))
+#     return kb
+
+
+# ================ BAHOLASH KLAVIATURALARI ================
+
+# def rating_inline_kb(sale_id: int):
+#     """Sotuvchini baholash — 1 dan 5 gacha raqamlar"""
+#     kb = InlineKeyboardMarkup(row_width=5)
+#     kb.row(
+#         InlineKeyboardButton("1", callback_data=f"rate_1_{sale_id}"),
+#         InlineKeyboardButton("2", callback_data=f"rate_2_{sale_id}"),
+#         InlineKeyboardButton("3", callback_data=f"rate_3_{sale_id}"),
+#         InlineKeyboardButton("4", callback_data=f"rate_4_{sale_id}"),
+#         InlineKeyboardButton("5", callback_data=f"rate_5_{sale_id}"),
+#     )
+#     kb.row(InlineKeyboardButton("⏭ O'tkazib yuborish", callback_data=f"rate_skip_{sale_id}"))
+#     return kb
+
+
+# RATING_REASONS = {
+#     'svc':    "😤 Xizmat yomon edi",
+#     'price':  "💰 Narx qimmat edi",
+#     'wait':   "⏰ Kutish uzoq bo'ldi",
+#     'cond':   "📦 Telefon holati mos kelmadi",
+#     'manner': "🤝 Sotuvchi muomalasi yoqmadi",
+#     'info':   "📋 Telefon haqida kam tushuntirdi",
+#     'other':  "📝 Boshqa sabab",
+# }
+
+
+# def rating_reason_kb(sale_id: int, rating: int):
+#     """1-4 baho uchun sabab tanlash"""
+#     kb = InlineKeyboardMarkup(row_width=2)
+#     for key, label in RATING_REASONS.items():
+#         kb.insert(InlineKeyboardButton(label, callback_data=f"rsn_{key}_{sale_id}_{rating}"))
+#     return kb
+
+
 # ================ ADMIN KLAVIATURALARI ================
 
 def admin_kb():
@@ -166,7 +249,10 @@ def admin_kb():
     )
 
     # Uchinchi qator - Foydalanuvchi boshqaruvi
-    kb.row(KeyboardButton("👤 Foydalanuvchi"))
+    kb.row(
+        KeyboardButton("👤 Foydalanuvchi"),
+        KeyboardButton("🛍 Mijoz xaridlari")
+    )
 
     # To'rtinchi qator - Qo'shimcha funksiyalar
     kb.row(

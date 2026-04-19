@@ -1,0 +1,261 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    .form-row {
+        margin-bottom: 20px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 8px;
+    }
+    .form-row label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 8px;
+        color: #333;
+    }
+    .form-row input[type="number"],
+    .form-row select {
+        width: 100%;
+        max-width: 400px;
+        padding: 10px;
+        border: 2px solid #ddd;
+        border-radius: 6px;
+        font-size: 14px;
+    }
+    .checkbox-row {
+        display: flex;
+        align-items: center;
+        margin: 10px 0;
+    }
+    .checkbox-row input[type="checkbox"] {
+        width: 20px;
+        height: 20px;
+        margin-right: 10px;
+    }
+    .parts-preview {
+        background: #f5f5f5;
+        padding: 15px;
+        border-radius: 8px;
+        margin: 20px 0;
+    }
+    .part-item {
+        display: inline-block;
+        background: white;
+        padding: 8px 12px;
+        margin: 5px;
+        border-radius: 6px;
+        border: 1px solid #ddd;
+    }
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin: 20px 0;
+    }
+    .stat-card {
+        background: white;
+        padding: 15px;
+        border-radius: 8px;
+        border: 1px solid #ddd;
+        text-align: center;
+    }
+    .stat-number {
+        font-size: 32px;
+        font-weight: bold;
+        color: #1976d2;
+        margin: 10px 0;
+    }
+    .warning-box {
+        background: #fff3cd;
+        border: 1px solid #ffc107;
+        padding: 15px;
+        border-radius: 6px;
+        margin: 20px 0;
+    }
+    .info-box {
+        background: #d1ecf1;
+        border: 1px solid #17a2b8;
+        padding: 15px;
+        border-radius: 6px;
+        margin: 20px 0;
+    }
+    .submit-row {
+        margin-top: 30px;
+        padding: 20px 0;
+        border-top: 2px solid #ddd;
+    }
+    .submit-row input[type="submit"] {
+        background: #4CAF50;
+        color: white;
+        padding: 12px 30px;
+        border: none;
+        border-radius: 6px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+    .submit-row input[type="submit"]:hover {
+        background: #45a049;
+    }
+    .helptext {
+        display: block;
+        margin-top: 5px;
+        color: #666;
+        font-size: 13px;
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Home</a>
+    &rsaquo; <a href="{% url 'admin:botapp_iphonemodel_changelist' %}">iPhone Modellari</a>
+    &rsaquo; <a href="{% url 'admin:botapp_iphonemodel_change' model.pk %}">{{ model.name }}</a>
+    &rsaquo; Avtomatik guruhlar
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>🎯 {{ model.name }} uchun avtomatik guruhlar yaratish</h1>
+
+<div class="info-box">
+    <strong>ℹ️ Ma'lumot:</strong> Bu sahifa avtomatik ravishda barcha mumkin bo'lgan qism kombinatsiyalarini yaratadi. 
+    Siz faqat chegirma foizini belgilaysiz, tizim avtomatik narxlarni hisoblaydi.
+</div>
+
+<!-- MAVJUD QISMLAR -->
+<div class="parts-preview">
+    <h3>📦 Mavjud qismlar ({{ parts_count }} ta):</h3>
+    {% for part in parts %}
+        <span class="part-item">
+            {{ part.get_part_type_display }}: <strong style="color: red;">${{ part.price_reduction|floatformat:2 }}</strong>
+        </span>
+    {% endfor %}
+</div>
+
+<!-- STATISTIKA -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">2 talik kombinatsiyalar</div>
+        <div class="stat-number">{{ pair_count }}</div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-label">3 talik kombinatsiyalar</div>
+        <div class="stat-number">{{ triple_count }}</div>
+    </div>
+    
+    {% if quad_count > 0 %}
+    <div class="stat-card">
+        <div class="stat-label">4 talik kombinatsiyalar</div>
+        <div class="stat-number">{{ quad_count }}</div>
+    </div>
+    {% endif %}
+    
+    {% if glass_screen_combos > 0 %}
+    <div class="stat-card" style="border-color: #ffc107;">
+        <div class="stat-label">⚠️ Oyna+Ekran (o'tkaziladi)</div>
+        <div class="stat-number" style="color: #ff9800;">{{ glass_screen_combos }}</div>
+    </div>
+    {% endif %}
+</div>
+
+{% if glass_screen_combos > 0 %}
+<div class="warning-box">
+    <strong>⚠️ Diqqat:</strong> Tizim avtomatik ravishda Oyna va Ekran birgalikda bo'lgan 
+    <strong>{{ glass_screen_combos }} ta</strong> kombinatsiyani o'tkazib yuboradi.
+</div>
+{% endif %}
+
+<!-- FORMA -->
+<form method="post">
+    {% csrf_token %}
+    
+    <fieldset class="module aligned">
+        <h2>⚙️ Sozlamalar</h2>
+        
+        <div class="form-row">
+            <label>{{ form.model.label }}:</label>
+            {{ form.model }}
+        </div>
+        
+        <h3>📊 Yaratish parametrlari</h3>
+        
+        <div class="checkbox-row">
+            {{ form.generate_pairs }} <label for="id_generate_pairs">{{ form.generate_pairs.label }}</label>
+        </div>
+        
+        <div class="form-row" id="pair_discount_row">
+            <label for="id_pair_discount_percent">{{ form.pair_discount_percent.label }}:</label>
+            {{ form.pair_discount_percent }}
+            <span class="helptext">
+                <strong>Misol:</strong> Ekran ($100) + Batareyka ($50) = $150. 
+                15% chegirma → $127.50 ($22.50 tejash)
+            </span>
+        </div>
+        
+        <div class="checkbox-row">
+            {{ form.generate_triples }} <label for="id_generate_triples">{{ form.generate_triples.label }}</label>
+        </div>
+        
+        <div class="form-row" id="triple_discount_row">
+            <label for="id_triple_discount_percent">{{ form.triple_discount_percent.label }}:</label>
+            {{ form.triple_discount_percent }}
+        </div>
+        
+        {% if quad_count > 0 %}
+        <div class="checkbox-row">
+            {{ form.generate_quads }} <label for="id_generate_quads">{{ form.generate_quads.label }}</label>
+        </div>
+        
+        <div class="form-row" id="quad_discount_row">
+            <label for="id_quad_discount_percent">{{ form.quad_discount_percent.label }}:</label>
+            {{ form.quad_discount_percent }}
+        </div>
+        {% endif %}
+        
+        <h3>🛡️ Xavfsizlik</h3>
+        
+        <div class="checkbox-row">
+            {{ form.skip_glass_screen }} <label for="id_skip_glass_screen">{{ form.skip_glass_screen.label }}</label>
+        </div>
+        
+        <div class="checkbox-row">
+            {{ form.overwrite_existing }} <label for="id_overwrite_existing" style="color: #d32f2f;">{{ form.overwrite_existing.label }}</label>
+        </div>
+    </fieldset>
+    
+    <div class="submit-row">
+        <input type="submit" value="🎯 Guruhlarni yaratish" class="default" />
+        <a href="{% url 'admin:botapp_iphonemodel_change' model.pk %}" class="button cancel-link">Bekor qilish</a>
+    </div>
+</form>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const pairCheckbox = document.getElementById('id_generate_pairs');
+    const tripleCheckbox = document.getElementById('id_generate_triples');
+    const quadCheckbox = document.getElementById('id_generate_quads');
+    
+    const pairRow = document.getElementById('pair_discount_row');
+    const tripleRow = document.getElementById('triple_discount_row');
+    const quadRow = document.getElementById('quad_discount_row');
+    
+    function updateVisibility() {
+        if (pairRow) pairRow.style.display = pairCheckbox.checked ? 'block' : 'none';
+        if (tripleRow) tripleRow.style.display = tripleCheckbox.checked ? 'block' : 'none';
+        if (quadRow) quadRow.style.display = quadCheckbox.checked ? 'block' : 'none';
+    }
+    
+    if (pairCheckbox) pairCheckbox.addEventListener('change', updateVisibility);
+    if (tripleCheckbox) tripleCheckbox.addEventListener('change', updateVisibility);
+    if (quadCheckbox) quadCheckbox.addEventListener('change', updateVisibility);
+    
+    updateVisibility();
+});
+</script>
+
+{% endblock %}

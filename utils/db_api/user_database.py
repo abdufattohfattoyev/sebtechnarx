@@ -1,6 +1,7 @@
 # utils/db_api/user_database.py - FOYDALANUVCHILAR BAZASI
 import psycopg2
 import psycopg2.extras
+from psycopg2 import pool as psycopg2_pool
 import os
 from datetime import datetime, timedelta
 from dotenv import load_dotenv, find_dotenv
@@ -19,12 +20,43 @@ USER_DB_CONFIG = {
     'port': os.getenv('USER_DB_PORT', '5432')
 }
 
+# ============================================================
+# CONNECTION POOL
+# ============================================================
+
+_user_pool = None
+
+
+def get_user_pool():
+    """Connection pool yaratish (bir marta)"""
+    global _user_pool
+    if _user_pool is None:
+        _user_pool = psycopg2_pool.ThreadedConnectionPool(
+            minconn=2,
+            maxconn=10,
+            **USER_DB_CONFIG
+        )
+    return _user_pool
+
+
+class _PooledConn:
+    """Pool connection wrapper — conn.close() pool ga qaytaradi"""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def close(self):
+        get_user_pool().putconn(self._conn)
+
 
 def get_user_conn():
-    """User database ulanishini yaratish"""
+    """Pool dan connection olish"""
     try:
-        conn = psycopg2.connect(**USER_DB_CONFIG)
-        return conn
+        conn = get_user_pool().getconn()
+        return _PooledConn(conn)
     except psycopg2.OperationalError as e:
         print(f"❌ User database ga ulanishda xato: {e}")
         raise
@@ -98,6 +130,32 @@ def init_user_db():
             )
         ''')
         print("✅ PAYMENT_HISTORY jadvali yaratildi")
+
+        # ===================== YANGI USTUNLAR (users) =====================
+        for col, definition in [
+            ('source',      "VARCHAR(50)"),
+            ('referred_by', "BIGINT"),
+        ]:
+            cursor.execute(f"""
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS {col} {definition}
+            """)
+        print("✅ USERS: source, referred_by ustunlari")
+
+        # ===================== SELLER_RATINGS JADVALI =====================
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS seller_ratings (
+                id SERIAL PRIMARY KEY,
+                customer_telegram_id BIGINT NOT NULL,
+                phone_sale_id INTEGER NOT NULL,
+                salesman_name VARCHAR(255),
+                rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+                comment TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_rating_unique ON seller_ratings(customer_telegram_id, phone_sale_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_rating_salesman ON seller_ratings(salesman_name)')
+        print("✅ SELLER_RATINGS jadvali yaratildi")
 
         conn.commit()
 
@@ -465,8 +523,8 @@ def get_user_balance(telegram_id):
 
     try:
         cursor.execute("""
-            SELECT balance, free_trials_left, total_pricings 
-            FROM users 
+            SELECT balance, free_trials_left, total_pricings, phone_number
+            FROM users
             WHERE telegram_id = %s
         """, (telegram_id,))
         result = cursor.fetchone()
@@ -476,7 +534,8 @@ def get_user_balance(telegram_id):
                 'success': True,
                 'balance': result['balance'],
                 'free_trials_left': result['free_trials_left'],
-                'total_pricings': result['total_pricings']
+                'total_pricings': result['total_pricings'],
+                'phone': result['phone_number'],
             }
         else:
             return {
@@ -1188,4 +1247,157 @@ if __name__ == "__main__":
         print("   - get_detailed_users_statistics()")
         print("   - get_all_users_count()")
         print("   - get_total_pricings()")
+
+
+# ============================================================
+# MANBA (SOURCE) FUNKSIYALARI
+# ============================================================
+
+SOURCE_LABELS = {
+    'telegram':  '📱 Telegram',
+    'instagram': '📸 Instagram',
+    'referral':  '🤝 Do\'st taklifi',
+    'walkin':    '🚶 O\'zi keldi',
+    'repeat':    '🔄 Avval ham kelgan',
+    'other':     '🔹 Boshqa',
+}
+
+
+def save_user_source(telegram_id: int, source: str, referred_by: int = None):
+    """Foydalanuvchi qayerdan kelganini saqlash"""
+    conn = get_user_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            UPDATE users
+            SET source = %s, referred_by = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE telegram_id = %s
+        """, (source, referred_by, telegram_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"❌ save_user_source xato: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_user_source(telegram_id: int):
+    """Foydalanuvchi manbasini olish"""
+    conn = get_user_conn()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cursor.execute("SELECT source, referred_by FROM users WHERE telegram_id = %s", (telegram_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else {}
+    except Exception as e:
+        print(f"❌ get_user_source xato: {e}")
+        return {}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_referral_count(telegram_id: int) -> int:
+    """Foydalanuvchi nechta do'stini taklif qilganini hisoblash"""
+    conn = get_user_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT COUNT(*) FROM users WHERE referred_by = %s", (telegram_id,))
+        return cursor.fetchone()[0] or 0
+    except Exception:
+        return 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ============================================================
+# BAHOLASH (RATING) FUNKSIYALARI
+# ============================================================
+
+def save_rating(customer_telegram_id: int, phone_sale_id: int,
+                salesman_name: str, rating: int, comment: str = None) -> bool:
+    """Sotuvchi baholashini saqlash (bir marta, takrorlanmaydi)"""
+    conn = get_user_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO seller_ratings
+                (customer_telegram_id, phone_sale_id, salesman_name, rating, comment)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (customer_telegram_id, phone_sale_id) DO NOTHING
+        """, (customer_telegram_id, phone_sale_id, salesman_name, rating, comment))
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        print(f"❌ save_rating xato: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def has_rated(customer_telegram_id: int, phone_sale_id: int) -> bool:
+    """Mijoz bu sotuvni baholaganmi?"""
+    conn = get_user_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT 1 FROM seller_ratings
+            WHERE customer_telegram_id = %s AND phone_sale_id = %s
+        """, (customer_telegram_id, phone_sale_id))
+        return cursor.fetchone() is not None
+    except Exception:
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_salesman_by_sale_id(sale_id: int) -> str:
+    """sale_id bo'yicha salesman_name ni qaytaradi"""
+    conn = get_user_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT salesman_name FROM sale_salesman_map WHERE sale_id = %s
+        """, (sale_id,))
+        row = cursor.fetchone()
+        return row[0] if row else ''
+    except Exception:
+        return ''
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_salesman_rating_stats(salesman_name: str) -> dict:
+    """Sotuvchining reyting statistikasi"""
+    conn = get_user_conn()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cursor.execute("""
+            SELECT
+                COUNT(*)          AS total,
+                ROUND(AVG(rating)::numeric, 1) AS avg_rating,
+                SUM(CASE WHEN rating = 5 THEN 1 ELSE 0 END) AS five_star,
+                SUM(CASE WHEN rating = 4 THEN 1 ELSE 0 END) AS four_star,
+                SUM(CASE WHEN rating = 3 THEN 1 ELSE 0 END) AS three_star,
+                SUM(CASE WHEN rating = 2 THEN 1 ELSE 0 END) AS two_star,
+                SUM(CASE WHEN rating = 1 THEN 1 ELSE 0 END) AS one_star
+            FROM seller_ratings
+            WHERE salesman_name = %s
+        """, (salesman_name,))
+        row = cursor.fetchone()
+        return dict(row) if row else {}
+    except Exception as e:
+        print(f"❌ get_salesman_rating_stats xato: {e}")
+        return {}
+    finally:
+        cursor.close()
+        conn.close()
         print("\n" + "=" * 60 + "\n")

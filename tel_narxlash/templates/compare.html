@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Narx Taqqoslash{% endblock %}
+{% block nav_compare %}active{% endblock %}
+
+{% block extra_style %}
+.compare-header { background: linear-gradient(135deg, #1a1a2e, #0f3460); color: white;
+                  border-radius: 16px; padding: 1.5rem; margin-bottom: 1.5rem; }
+.compare-col { border: 2px solid #dee2e6; border-radius: 12px; overflow: hidden; }
+.compare-col .col-header { background: #1a1a2e; color: white; padding: 1rem; text-align: center; }
+.compare-col .col-body { padding: 1rem; }
+.compare-row { border-bottom: 1px solid #f0f0f0; padding: 0.5rem 0; }
+.compare-row:last-child { border-bottom: none; }
+.price-range { font-size: 1.4rem; font-weight: 700; color: #1a1a2e; }
+.tag-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.section-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px;
+                 color: #6c757d; font-weight: 600; margin: 0.75rem 0 0.35rem; }
+{% endblock %}
+
+{% block content %}
+<div class="compare-header">
+    <h2 class="fw-bold mb-1"><i class="bi bi-arrow-left-right me-2"></i>Narx Taqqoslash</h2>
+    <p class="opacity-75 mb-0">2–3 ta modalni tanlang va narxlarini taqqoslang</p>
+</div>
+
+<!-- Model selector -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            {% for i in "123" %}
+            <div class="col-sm-4">
+                <label class="form-label small fw-semibold">{{ forloop.counter }}-model</label>
+                <select name="models" class="form-select">
+                    <option value="">— Tanlang —</option>
+                    {% for m in all_models %}
+                    <option value="{{ m.id }}"
+                        {% if m.id|stringformat:"s" in selected_ids %}selected{% endif %}>
+                        {{ m.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endfor %}
+            <div class="col-12 col-sm-auto">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-search me-1"></i>Taqqoslash
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if compare_data %}
+<div class="row g-3">
+    {% for item in compare_data %}
+    <div class="col-md-{% if compare_data|length == 2 %}6{% else %}4{% endif %}">
+        <div class="compare-col h-100">
+            <div class="col-header">
+                <h5 class="mb-1 fw-bold">{{ item.model.name }}</h5>
+                <div class="opacity-75 small">Standart: {{ item.model.get_default_sim_type_display }}</div>
+            </div>
+            <div class="col-body">
+
+                <!-- Narx oraligi -->
+                <div class="compare-row text-center py-3">
+                    <div class="small text-muted mb-1">Narx oraligi</div>
+                    <div class="price-range">${{ item.min_price|floatformat:0 }}</div>
+                    <div class="text-muted small">— dan —</div>
+                    <div class="price-range">${{ item.max_price|floatformat:0 }}</div>
+                </div>
+
+                <!-- Asosiy narx -->
+                <div class="compare-row d-flex justify-content-between">
+                    <span class="small text-muted">Asosiy narx</span>
+                    <strong>${{ item.model.base_standard_price|floatformat:0 }}</strong>
+                </div>
+
+                <!-- Quti yo'q farqi -->
+                <div class="compare-row d-flex justify-content-between">
+                    <span class="small text-muted">Qutisiz farqi</span>
+                    <span class="text-danger">${{ item.model.box_price_difference|floatformat:0 }}</span>
+                </div>
+
+                <!-- Xotiralar -->
+                <div class="section-label">Xotira</div>
+                <div class="tag-list mb-2">
+                    {% for s in item.storages %}
+                    <span class="badge {% if s.is_standard %}bg-dark{% else %}bg-light text-dark border{% endif %}">
+                        {{ s.size }}
+                        {% if not s.is_standard and s.price_difference %}
+                            ({{ s.price_difference|floatformat:0 }}$)
+                        {% endif %}
+                    </span>
+                    {% empty %}
+                    <span class="text-muted small">Yo'q</span>
+                    {% endfor %}
+                </div>
+
+                <!-- Ranglar -->
+                <div class="section-label">Ranglar</div>
+                <div class="tag-list mb-2">
+                    {% for c in item.colors %}
+                    <span class="badge bg-light text-dark border" style="font-size:.72rem;">
+                        {{ c.name }}
+                        {% if c.price_difference %}({{ c.price_difference|floatformat:0 }}$){% endif %}
+                    </span>
+                    {% empty %}
+                    <span class="text-muted small">Yo'q</span>
+                    {% endfor %}
+                </div>
+
+                <!-- Batareya -->
+                <div class="section-label">Batareya holatlari</div>
+                <div class="tag-list mb-2">
+                    {% for b in item.batteries %}
+                    <span class="badge {% if b.price_difference == 0 %}bg-success{% else %}bg-light text-dark border{% endif %}"
+                          style="font-size:.72rem;">
+                        {{ b.label }}
+                    </span>
+                    {% empty %}
+                    <span class="text-muted small">Yo'q</span>
+                    {% endfor %}
+                </div>
+
+                <div class="mt-3 d-grid gap-2">
+                    <a href="/model/{{ item.model.id }}/" class="btn btn-outline-dark btn-sm">
+                        <i class="bi bi-info-circle me-1"></i>Batafsil
+                    </a>
+                    <a href="/?model={{ item.model.id }}" class="btn btn-primary btn-sm">
+                        <i class="bi bi-calculator me-1"></i>Narx hisoblash
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% elif selected_ids %}
+<div class="text-center py-5">
+    <i class="bi bi-exclamation-circle fs-1 text-muted"></i>
+    <p class="text-muted mt-2">Tanlangan modellar topilmadi.</p>
+</div>
+{% else %}
+<div class="text-center py-5 text-muted">
+    <i class="bi bi-arrow-left-right fs-1 mb-3 d-block"></i>
+    Yuqoridan modellarni tanlang va <strong>Taqqoslash</strong> tugmasini bosing
+</div>
+{% endif %}
+{% endblock %}

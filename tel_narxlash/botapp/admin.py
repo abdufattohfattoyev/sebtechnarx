@@ -1,0 +1,1314 @@
+# admin.py - TO'LIQTA TO'G'RILANGAN VERSIYA (Maksimal ayriladigan summa to'g'ri ishlaydi)
+import decimal
+
+from django.contrib import admin
+from django import forms
+from django.utils.html import format_html
+from django.utils.safestring import mark_safe
+from django.utils.translation import gettext_lazy as _
+from django.urls import path
+from django.shortcuts import render, redirect
+from django.contrib import messages
+from django.db import transaction
+from django.core.exceptions import ValidationError
+from django.http import HttpResponse
+from decimal import Decimal, ROUND_HALF_UP
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from io import BytesIO
+from itertools import combinations
+
+from .models import (
+    iPhoneModel, StorageOption, Color,
+    BatteryRange, ReplacedPart, ReplacedPartCombination, PriceEntry
+)
+
+
+# ============= HELPER FUNCTIONS =============
+
+def safe_decimal_format(value, decimals=2):
+    """Safely format Decimal to string for HTML"""
+    try:
+        if isinstance(value, (Decimal, float, int)):
+            return f"{float(value):.{decimals}f}"
+        return str(value)
+    except (ValueError, TypeError):
+        return "0.00"
+
+
+def round_to_5_or_0(value):
+    """Sonni 5 yoki 0 bilan tugaydigan butun songa yaxlitlash"""
+    try:
+        if not value:
+            return Decimal('0')
+
+        # Butun songa yaxlitlash (bankir usuli)
+        rounded = Decimal(str(value)).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+
+        # Oxirgi raqamni olish
+        last_digit = int(abs(rounded) % 10)
+
+        # Agar oxirgi raqam 1,2,3,4 bo'lsa 5 ga, 6,7,8,9 bo'lsa 0 ga yaxlitlash
+        if 1 <= last_digit <= 4:
+            # 5 ga yaxlitlash
+            if rounded < 0:
+                result = rounded + Decimal(last_digit) - Decimal(5)
+            else:
+                result = rounded - Decimal(last_digit) + Decimal(5)
+        elif 6 <= last_digit <= 9:
+            # 0 ga yaxlitlash (o'ngdagi 10 ga)
+            if rounded < 0:
+                result = rounded + Decimal(last_digit)
+            else:
+                result = rounded - Decimal(last_digit) + Decimal(10)
+        else:
+            # 0 yoki 5 bo'lsa o'zini qoldirish
+            result = rounded
+
+        return result
+    except:
+        return Decimal('0')
+
+
+# ============= INLINE'LAR =============
+
+class StorageOptionInline(admin.TabularInline):
+    model = StorageOption
+    extra = 1
+    fields = ('size', 'price_difference', 'is_standard')
+
+
+class ColorInline(admin.TabularInline):
+    model = Color
+    extra = 1
+    fields = ('name', 'color_type', 'price_difference', 'image')
+
+
+class BatteryRangeInline(admin.TabularInline):
+    model = BatteryRange
+    extra = 1
+    fields = ('label', 'min_percent', 'max_percent', 'price_difference', 'is_standard')
+
+
+class ReplacedPartInline(admin.TabularInline):
+    model = ReplacedPart
+    extra = 3
+    fields = ('part_type', 'price_reduction', 'order', 'is_active', 'description')
+
+
+class ReplacedPartCombinationInline(admin.TabularInline):
+    model = ReplacedPartCombination
+    extra = 2
+    fields = ('name', 'custom_price', 'priority', 'is_active', 'parts_display', 'savings_display')
+    readonly_fields = ('parts_display', 'savings_display')
+
+    def parts_display(self, obj):
+        if obj.pk:
+            parts = obj.parts.all()
+            if parts:
+                return format_html('<span style="color:blue;">{}</span>',
+                                   ", ".join([p.get_part_type_display() for p in parts]))
+            return format_html('<span style="color:red;">✖ Yo\'q</span>')
+        return "—"
+
+    parts_display.short_description = _("Qismlar")
+
+    def savings_display(self, obj):
+        if obj.pk:
+            individual_str = safe_decimal_format(obj.get_individual_total())
+            custom_str = safe_decimal_format(obj.custom_price)
+            saved_str = safe_decimal_format(obj.get_savings())
+            if float(obj.get_savings()) > 0:
+                return mark_safe(
+                    f'<small>Alohida: ${individual_str}<br>Kombinatsiya: <b>${custom_str}</b><br>💰 ${saved_str}</small>')
+            return mark_safe(f'<small>${individual_str} → ${custom_str}</small>')
+        return "—"
+
+    savings_display.short_description = _("Tejash")
+
+
+# ============= FORMALAR =============
+
+class ReplacedPartCombinationForm(forms.ModelForm):
+    class Meta:
+        model = ReplacedPartCombination
+        fields = '__all__'
+
+    def clean(self):
+        cleaned_data = super().clean()
+        parts = cleaned_data.get('parts')
+        if parts:
+            part_count = parts.count()
+            if part_count < 2:
+                raise ValidationError("✖ Kamida 2 ta qism kerak!")
+            if part_count > 3:
+                raise ValidationError("✖ Maksimal 3 ta qism!")
+            part_types = [p.part_type for p in parts.all()]
+            if 'glass' in part_types and 'screen' in part_types:
+                raise ValidationError("✖ Oyna va Ekran birgalikda BO'LMAYDI!")
+        return cleaned_data
+
+
+class AutoCombinationForm(forms.Form):
+    """Avtomatik kombinatsiyalar yaratish formasi - TO'G'RILANGAN VERSIYA"""
+    model = forms.ModelChoiceField(
+        queryset=iPhoneModel.objects.none(),
+        label="Model",
+        widget=forms.HiddenInput()
+    )
+
+    # 2 talik kombinatsiyalar
+    generate_pairs = forms.BooleanField(
+        initial=True,
+        required=False,
+        label="🔹 2 talik kombinatsiyalar yaratish"
+    )
+
+    pair_discount_percent = forms.DecimalField(
+        initial=15,
+        min_value=0,
+        max_value=100,
+        decimal_places=0,
+        label="Chegirma foizi (2 ta)",
+        help_text="Butun son. Masalan: 15 = 15% chegirma"
+    )
+
+    pair_max_reduction = forms.DecimalField(
+        initial=0,
+        min_value=0,
+        max_digits=15,
+        decimal_places=0,
+        required=False,
+        label="🔴 Maksimal ayriladigan summa (2 ta)",
+        help_text="Butun son. Masalan: 100 = maksimal -100 gacha ayiriladi. 0 = cheksiz"
+    )
+
+    # 3 talik kombinatsiyalar
+    generate_triples = forms.BooleanField(
+        initial=True,
+        required=False,
+        label="🔸 3 talik kombinatsiyalar yaratish"
+    )
+
+    triple_discount_percent = forms.DecimalField(
+        initial=20,
+        min_value=0,
+        max_value=100,
+        decimal_places=0,
+        label="Chegirma foizi (3 ta)",
+        help_text="Butun son. Masalan: 20 = 20% chegirma"
+    )
+
+    triple_max_reduction = forms.DecimalField(
+        initial=150,
+        min_value=0,
+        max_digits=15,
+        decimal_places=0,
+        required=False,
+        label="🔴 Maksimal ayriladigan summa (3 ta)",
+        help_text="Butun son. Masalan: 150 = maksimal -150 gacha ayiriladi. 0 = cheksiz"
+    )
+
+    # Yaxlitlash sozlamalari
+    round_to_5_or_0 = forms.BooleanField(
+        initial=True,
+        required=False,
+        label="💰 5/0 ga yaxlitlash",
+        help_text="Narxlarni 5 yoki 0 bilan tugaydigan butun songa yaxlitlash"
+    )
+
+    # Xavfsizlik sozlamalari
+    skip_glass_screen = forms.BooleanField(
+        initial=True,
+        required=False,
+        label="⚠️ Oyna + Ekran kombinatsiyasini o'tkazib yuborish"
+    )
+
+    overwrite_existing = forms.BooleanField(
+        initial=False,
+        required=False,
+        label="⚠️ Mavjud kombinatsiyalarni qayta yozish"
+    )
+
+    def __init__(self, *args, **kwargs):
+        model_id = kwargs.pop('model_id', None)
+        super().__init__(*args, **kwargs)
+        if model_id:
+            self.fields['model'].queryset = iPhoneModel.objects.filter(pk=model_id)
+            self.fields['model'].initial = model_id
+
+    def clean(self):
+        cleaned_data = super().clean()
+        # Limitlarni tekshirish
+        pair_max = cleaned_data.get('pair_max_reduction', 0)
+        triple_max = cleaned_data.get('triple_max_reduction', 0)
+
+        if pair_max and pair_max < 0:
+            raise ValidationError("2-talik uchun maksimal ayriladigan summa manfiy bo'lishi mumkin emas!")
+
+        if triple_max and triple_max < 0:
+            raise ValidationError("3-talik uchun maksimal ayriladigan summa manfiy bo'lishi mumkin emas!")
+
+        return cleaned_data
+
+
+class BulkGenerateCompleteForm(forms.Form):
+    """Barcha holatlar uchun avtomatik yaratish"""
+    model = forms.ModelChoiceField(queryset=iPhoneModel.objects.filter(is_active=True), label=_("Model"), required=True,
+                                   empty_label=_("Model tanlang..."))
+    storages = forms.ModelMultipleChoiceField(queryset=StorageOption.objects.none(), label=_("Xotiralar"),
+                                              widget=forms.CheckboxSelectMultiple, required=False)
+    colors = forms.ModelMultipleChoiceField(queryset=Color.objects.none(), label=_("Ranglar"),
+                                            widget=forms.CheckboxSelectMultiple, required=False)
+    batteries = forms.ModelMultipleChoiceField(queryset=BatteryRange.objects.none(), label=_("Batareyalar"),
+                                               widget=forms.CheckboxSelectMultiple, required=False)
+    sim_types = forms.MultipleChoiceField(choices=iPhoneModel.SIM_TYPE_CHOICES, label=_("SIM turlari"),
+                                          widget=forms.CheckboxSelectMultiple, required=True, initial=['physical'])
+    box_options = forms.MultipleChoiceField(choices=(('yes', 'Quti bor'), ('no', 'Quti yo\'q')), label=_("Quti"),
+                                            widget=forms.CheckboxSelectMultiple, initial=['yes', 'no'], required=True)
+    include_clean = forms.BooleanField(initial=True, required=False, label=_("✅ Yangi telefon"))
+    combinations = forms.ModelMultipleChoiceField(queryset=ReplacedPartCombination.objects.none(),
+                                                  label=_("🎯 Kombinatsiyalar"), widget=forms.CheckboxSelectMultiple,
+                                                  required=False)
+    individual_parts = forms.ModelMultipleChoiceField(queryset=ReplacedPart.objects.none(), label=_("🔧 Alohida (1 ta)"),
+                                                      widget=forms.CheckboxSelectMultiple, required=False)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        model_id = None
+        if 'initial' in kwargs and kwargs['initial'].get('model'):
+            m = kwargs['initial']['model']
+            model_id = m.pk if isinstance(m, iPhoneModel) else (int(m) if m else None)
+        if self.data.get('model'):
+            try:
+                model_id = int(self.data.get('model'))
+            except:
+                pass
+        if model_id:
+            try:
+                self.fields['storages'].queryset = StorageOption.objects.filter(model_id=model_id).order_by('size')
+                self.fields['colors'].queryset = Color.objects.filter(model_id=model_id).order_by('name')
+                self.fields['batteries'].queryset = BatteryRange.objects.filter(model_id=model_id).order_by(
+                    '-min_percent')
+                self.fields['combinations'].queryset = ReplacedPartCombination.objects.filter(model_id=model_id,
+                                                                                              is_active=True).order_by(
+                    '-priority')
+                self.fields['individual_parts'].queryset = ReplacedPart.objects.filter(model_id=model_id,
+                                                                                       is_active=True).order_by('order')
+                if self.data and 'generate' in self.data:
+                    self.fields['storages'].required = True
+                    self.fields['colors'].required = True
+                    self.fields['batteries'].required = True
+            except:
+                pass
+
+
+# ============= ADMIN CLASSES =============
+
+@admin.register(iPhoneModel)
+class iPhoneModelAdmin(admin.ModelAdmin):
+    list_display = ('name', 'order', 'is_active', 'default_sim_type', 'base_standard_price', 'all_auto_buttons')
+    list_filter = ('is_active', 'default_sim_type')
+    search_fields = ('name',)
+    ordering = ('order',)
+    inlines = [StorageOptionInline, ColorInline, BatteryRangeInline, ReplacedPartInline, ReplacedPartCombinationInline]
+    fieldsets = (
+        (_('Asosiy'), {'fields': ('name', 'order', 'is_active')}),
+        (_('Narx'), {'fields': (
+            'base_standard_price', 'box_price_difference', 'alternative_sim_price_difference', 'default_sim_type')}),
+    )
+
+    def save_model(self, request, obj, form, change):
+        """Narx o'zgarishini message sifatida ko'rsatish"""
+        if change and 'base_standard_price' in form.changed_data:
+            old = iPhoneModel.objects.get(pk=obj.pk).base_standard_price
+            messages.info(
+                request,
+                f"💰 {obj.name}: narx ${old:,.0f} → ${obj.base_standard_price:,.0f} ga o'zgartirildi"
+            )
+        super().save_model(request, obj, form, change)
+
+    # =========== BARCHA AVTOMATIK TUGMALARI BIRGA ===========
+    def all_auto_buttons(self, obj):
+        """Barcha avtomatik tugmalari bir qatorda"""
+        battery_url = f'/admin/botapp/iphonemodel/{obj.pk}/auto-battery-ranges/'
+        parts_url = f'/admin/botapp/iphonemodel/{obj.pk}/auto-parts/'
+        combo_url = f'/admin/botapp/iphonemodel/{obj.pk}/auto-combinations/'
+        all_url = f'/admin/botapp/iphonemodel/{obj.pk}/generate-all/'
+
+        return format_html(
+            '''
+            <div style="display: flex; gap: 5px;">
+                <a href="{}" style="background:#4caf50;color:white;padding:6px 12px;border-radius:4px;text-decoration:none;display:inline-block;">🔋 Batareya</a>
+                <a href="{}" style="background:#ff9800;color:white;padding:6px 12px;border-radius:4px;text-decoration:none;display:inline-block;">🔧 Qismlar</a>
+                <a href="{}" style="background:#1976d2;color:white;padding:6px 12px;border-radius:4px;text-decoration:none;display:inline-block;">🎯 Kombinatsiya</a>
+                <a href="{}" style="background:#9c27b0;color:white;padding:6px 12px;border-radius:4px;text-decoration:none;display:inline-block;font-weight:bold;">⚡ HAMMA</a>
+            </div>
+            ''',
+            battery_url, parts_url, combo_url, all_url
+        )
+
+    all_auto_buttons.short_description = "Avtomatik"
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                '<int:model_id>/auto-battery-ranges/',
+                self.admin_site.admin_view(self.auto_generate_battery_ranges),
+                name='botapp_iphonemodel_auto_battery_ranges'
+            ),
+            path(
+                '<int:model_id>/auto-parts/',
+                self.admin_site.admin_view(self.auto_generate_parts),
+                name='botapp_iphonemodel_auto_parts'
+            ),
+            path(
+                '<int:model_id>/auto-combinations/',
+                self.admin_site.admin_view(self.auto_combinations_view),
+                name='botapp_iphonemodel_auto_combinations'
+            ),
+            path(
+                '<int:model_id>/generate-all/',
+                self.admin_site.admin_view(self.generate_all_at_once),
+                name='botapp_iphonemodel_generate_all'
+            ),
+        ]
+        return custom_urls + urls
+
+    # =========== BATAREYKA AVTOMATIK FUNKSIYASI ===========
+    def auto_generate_battery_ranges(self, request, model_id):
+        """Avtomatik batareyka oralig'larini yaratish"""
+        try:
+            model = iPhoneModel.objects.get(pk=model_id)
+        except iPhoneModel.DoesNotExist:
+            messages.error(request, "Model topilmadi!")
+            return redirect('admin:botapp_iphonemodel_changelist')
+
+        # Batareyka oralig'lari (rasmdagidek)
+        battery_ranges = [
+            ("100%", 100, 100, 0, True),
+            ("98-99%", 98, 99, -10, False),
+            ("95-97%", 95, 97, -20, False),
+            ("90-93%", 90, 93, -30, False),
+            ("86-89%", 86, 89, -40, False),
+            ("83-85%", 83, 85, -50, False),
+            ("80-82%", 80, 82, -60, False),
+            ("75-78%", 75, 78, -70, False),
+            ("70-74%", 70, 74, -80, False),
+        ]
+
+        created_count = 0
+        updated_count = 0
+
+        for label, min_percent, max_percent, price_diff, is_standard in battery_ranges:
+            existing = BatteryRange.objects.filter(model=model, label=label).first()
+
+            if existing:
+                existing.min_percent = min_percent
+                existing.max_percent = max_percent
+                existing.price_difference = price_diff
+                existing.is_standard = is_standard
+                existing.save()
+                updated_count += 1
+            else:
+                BatteryRange.objects.create(
+                    model=model,
+                    label=label,
+                    min_percent=min_percent,
+                    max_percent=max_percent,
+                    price_difference=price_diff,
+                    is_standard=is_standard
+                )
+                created_count += 1
+
+        messages.success(
+            request,
+            f"✅ Batareyka oralig'lari yaratildi! ({created_count} ta yangi, {updated_count} ta yangilandi)"
+        )
+        return redirect('admin:botapp_iphonemodel_change', model_id)
+
+    # =========== QISMLAR AVTOMATIK FUNKSIYASI ===========
+    def auto_generate_parts(self, request, model_id):
+        """Avtomatik almashgan qismlarni yaratish"""
+        try:
+            model = iPhoneModel.objects.get(pk=model_id)
+        except iPhoneModel.DoesNotExist:
+            messages.error(request, "Model topilmadi!")
+            return redirect('admin:botapp_iphonemodel_changelist')
+
+        # Standart almashgan qismlar ro'yxati
+        standard_parts = [
+            ('battery', 'Batareyka', -100, 1, "Telefon batareykasi almashgan"),
+            ('back_cover', 'Krishka', -80, 2, "Telefon krishkasi almashgan"),
+            ('face_id', 'Face ID', -120, 3, "Face ID tizimi ishlamaydi"),
+            ('glass', 'Oyna', -70, 4, "Old oyna yorilgan/siniq"),
+            ('screen', 'Ekran', -150, 5, "Ekran almashgan (LCD/LED)"),
+            ('camera', 'Kamera', -90, 6, "Kamera almashgan"),
+            ('broken', 'Qirilgan', -200, 7, "Telefon qirilgan/tushib qolgan"),
+            ('body', 'Korpus', -110, 8, "Korpus almashgan"),
+        ]
+
+        created_count = 0
+        updated_count = 0
+
+        for part_type, display_name, price_reduction, order, description in standard_parts:
+            existing = ReplacedPart.objects.filter(
+                model=model,
+                part_type=part_type
+            ).first()
+
+            if existing:
+                existing.price_reduction = price_reduction
+                existing.order = order
+                existing.description = description
+                existing.save()
+                updated_count += 1
+            else:
+                ReplacedPart.objects.create(
+                    model=model,
+                    part_type=part_type,
+                    price_reduction=price_reduction,
+                    order=order,
+                    description=description,
+                    is_active=True
+                )
+                created_count += 1
+
+        messages.success(
+            request,
+            f"✅ Almashgan qismlar yaratildi! ({created_count} ta yangi, {updated_count} ta yangilandi)"
+        )
+        return redirect('admin:botapp_iphonemodel_change', model_id)
+
+    # =========== BARCHASINI BIR VAQTDA YARATISH ===========
+    def generate_all_at_once(self, request, model_id):
+        """Barchasini bir vaqtda yaratish: Batareyka + Qismlar"""
+        try:
+            model = iPhoneModel.objects.get(pk=model_id)
+        except iPhoneModel.DoesNotExist:
+            messages.error(request, "Model topilmadi!")
+            return redirect('admin:botapp_iphonemodel_changelist')
+
+        total_created = 0
+        total_updated = 0
+
+        # 1. Batareyka oralig'larini yaratish
+        battery_ranges = [
+            ("100%", 100, 100, 0, True),
+            ("98-99%", 98, 99, -10, False),
+            ("95-97%", 95, 97, -20, False),
+            ("90-93%", 90, 93, -30, False),
+            ("86-89%", 86, 89, -40, False),
+            ("83-85%", 83, 85, -50, False),
+            ("80-82%", 80, 82, -60, False),
+            ("75-78%", 75, 78, -70, False),
+            ("70-74%", 70, 74, -80, False),
+        ]
+
+        for label, min_percent, max_percent, price_diff, is_standard in battery_ranges:
+            existing = BatteryRange.objects.filter(model=model, label=label).first()
+            if existing:
+                existing.min_percent = min_percent
+                existing.max_percent = max_percent
+                existing.price_difference = price_diff
+                existing.is_standard = is_standard
+                existing.save()
+                total_updated += 1
+            else:
+                BatteryRange.objects.create(
+                    model=model,
+                    label=label,
+                    min_percent=min_percent,
+                    max_percent=max_percent,
+                    price_difference=price_diff,
+                    is_standard=is_standard
+                )
+                total_created += 1
+
+        # 2. Almashgan qismlarni yaratish
+        standard_parts = [
+            ('battery', 'Batareyka', -100, 1, "Telefon batareykasi almashgan"),
+            ('back_cover', 'Krishka', -90, 2, "Telefon krishkasi almashgan"),
+            ('face_id', 'Face ID', -110, 3, "Face ID tizimi ishlamaydi"),
+            ('glass', 'Oyna', -105, 4, "Old oyna yorilgan/siniq"),
+            ('screen', 'Ekran', -125, 5, "Ekran almashgan (LCD/LED)"),
+            ('camera', 'Kamera', -110, 6, "Kamera almashgan"),
+            ('broken', 'Qirilgan', -50, 7, "Telefon qirilgan/tushib qolgan"),
+            ('body', 'Korpus', -150, 8, "Korpus almashgan"),
+        ]
+
+        for part_type, display_name, price_reduction, order, description in standard_parts:
+            existing = ReplacedPart.objects.filter(model=model, part_type=part_type).first()
+            if existing:
+                existing.price_reduction = price_reduction
+                existing.order = order
+                existing.description = description
+                existing.save()
+                total_updated += 1
+            else:
+                ReplacedPart.objects.create(
+                    model=model,
+                    part_type=part_type,
+                    price_reduction=price_reduction,
+                    order=order,
+                    description=description,
+                    is_active=True
+                )
+                total_created += 1
+
+        messages.success(
+            request,
+            f"✅ HAMMASI YARATILDI! Batareyka oralig'lari + Almashgan qismlar. "
+            f"({total_created} ta yangi, {total_updated} ta yangilandi)"
+        )
+        return redirect('admin:botapp_iphonemodel_change', model_id)
+
+    # =========== AVTOMATIK KOMBINATSIYALAR ===========
+    def auto_combinations_view(self, request, model_id):
+        """🎯 AVTOMATIK KOMBINATSIYALAR YARATISH"""
+        try:
+            model = iPhoneModel.objects.get(pk=model_id)
+        except iPhoneModel.DoesNotExist:
+            messages.error(request, "Model topilmadi!")
+            return redirect('admin:botapp_iphonemodel_changelist')
+
+        parts = model.replaced_parts.filter(is_active=True).order_by('order')
+
+        if request.method == 'POST':
+            form = AutoCombinationForm(request.POST, model_id=model_id)
+            if form.is_valid():
+                data = form.cleaned_data
+
+                try:
+                    with transaction.atomic():
+                        created_count = 0
+                        skipped_count = 0
+                        limited_count_2 = 0
+                        limited_count_3 = 0
+                        rounded_count = 0
+
+                        if data['overwrite_existing']:
+                            deleted_count = model.part_combinations.all().delete()[0]
+                            messages.info(request, f"🗑️ {deleted_count} ta eski kombinatsiya o'chirildi")
+
+                        parts_list = list(parts)
+
+                        def calculate_final_price(individual_total, discount_percent, max_reduction_input,
+                                                  use_rounding):
+                            try:
+                                if individual_total >= 0:
+                                    discounted = individual_total * (
+                                            Decimal('1') - Decimal(str(discount_percent)) / 100)
+                                    return discounted, False, False
+
+                                base_reduction = abs(individual_total)
+                                discount_amount = base_reduction * (Decimal(str(discount_percent)) / 100)
+                                price_after_discount = individual_total + discount_amount
+
+                                limited = False
+                                if max_reduction_input is not None and max_reduction_input != "":
+                                    try:
+                                        max_val = Decimal(str(max_reduction_input))
+                                        if max_val > 0:
+                                            max_allowed = -max_val
+                                            if price_after_discount < max_allowed:
+                                                price_after_discount = max_allowed
+                                                limited = True
+                                    except:
+                                        pass
+
+                                rounded = False
+                                if use_rounding:
+                                    original = price_after_discount
+                                    price_after_discount = round_to_5_or_0(price_after_discount)
+                                    if original != price_after_discount:
+                                        rounded = True
+
+                                return price_after_discount, limited, rounded
+                            except Exception as e:
+                                print(f"Error in calculate_final_price: {e}")
+                                return individual_total, False, False
+
+                        # 2-TALIK KOMBINATSIYALAR
+                        if data['generate_pairs'] and len(parts_list) >= 2:
+                            pair_discount = data['pair_discount_percent']
+                            pair_max = data.get('pair_max_reduction') or 0
+                            use_rounding = data.get('round_to_5_or_0', True)
+
+                            for part1, part2 in combinations(parts_list, 2):
+                                if data['skip_glass_screen']:
+                                    if {part1.part_type, part2.part_type} == {'glass', 'screen'}:
+                                        skipped_count += 1
+                                        continue
+
+                                name = f"{part1.get_part_type_display()} + {part2.get_part_type_display()}"
+                                individual_total = part1.price_reduction + part2.price_reduction
+
+                                custom_price, limited, rounded = calculate_final_price(
+                                    individual_total, pair_discount, pair_max, use_rounding
+                                )
+
+                                if limited:
+                                    limited_count_2 += 1
+                                if rounded:
+                                    rounded_count += 1
+
+                                existing = model.part_combinations.filter(name=name).first()
+                                if existing and not data['overwrite_existing']:
+                                    skipped_count += 1
+                                    continue
+
+                                if existing:
+                                    existing.custom_price = custom_price
+                                    existing.priority = 5
+                                    existing.save()
+                                    existing.parts.set([part1, part2])
+                                else:
+                                    combo = ReplacedPartCombination.objects.create(
+                                        model=model,
+                                        name=name,
+                                        custom_price=custom_price,
+                                        priority=5,
+                                        is_active=True
+                                    )
+                                    combo.parts.set([part1, part2])
+
+                                created_count += 1
+
+                        # 3-TALIK KOMBINATSIYALAR
+                        if data['generate_triples'] and len(parts_list) >= 3:
+                            triple_discount = data['triple_discount_percent']
+                            triple_max = data.get('triple_max_reduction') or 0
+                            use_rounding = data.get('round_to_5_or_0', True)
+
+                            for part1, part2, part3 in combinations(parts_list, 3):
+                                if data['skip_glass_screen']:
+                                    part_types = {part1.part_type, part2.part_type, part3.part_type}
+                                    if 'glass' in part_types and 'screen' in part_types:
+                                        skipped_count += 1
+                                        continue
+
+                                name = f"{part1.get_part_type_display()} + {part2.get_part_type_display()} + {part3.get_part_type_display()}"
+                                individual_total = part1.price_reduction + part2.price_reduction + part3.price_reduction
+
+                                custom_price, limited, rounded = calculate_final_price(
+                                    individual_total, triple_discount, triple_max, use_rounding
+                                )
+
+                                if limited:
+                                    limited_count_3 += 1
+                                if rounded:
+                                    rounded_count += 1
+
+                                existing = model.part_combinations.filter(name=name).first()
+                                if existing and not data['overwrite_existing']:
+                                    skipped_count += 1
+                                    continue
+
+                                if existing:
+                                    existing.custom_price = custom_price
+                                    existing.priority = 10
+                                    existing.save()
+                                    existing.parts.set([part1, part2, part3])
+                                else:
+                                    combo = ReplacedPartCombination.objects.create(
+                                        model=model,
+                                        name=name,
+                                        custom_price=custom_price,
+                                        priority=10,
+                                        is_active=True
+                                    )
+                                    combo.parts.set([part1, part2, part3])
+
+                                created_count += 1
+
+                        # Xabarlar
+                        message_parts = [f"✅ {created_count} ta kombinatsiya yaratildi/yangilandi!"]
+                        if skipped_count > 0:
+                            message_parts.append(f"({skipped_count} ta o'tkazib yuborildi)")
+                        if limited_count_2 > 0 or limited_count_3 > 0:
+                            limit_msg = []
+                            if limited_count_2 > 0:
+                                limit_msg.append(f"2-talik: {limited_count_2}")
+                            if limited_count_3 > 0:
+                                limit_msg.append(f"3-talik: {limited_count_3}")
+                            message_parts.append(
+                                f"🔴 Maksimal ayriladigan summa limitiga tushdi: {' + '.join(limit_msg)} ta")
+                        if rounded_count > 0:
+                            message_parts.append(f"💰 {rounded_count} ta 5/0 ga yaxlitlandi")
+
+                        messages.success(request, " ".join(message_parts))
+                        return redirect('admin:botapp_iphonemodel_change', model.pk)
+
+                except Exception as e:
+                    messages.error(request, f"❌ Xatolik yuz berdi: {str(e)}")
+
+        else:
+            form = AutoCombinationForm(model_id=model_id)
+
+        # Statistika
+        parts_count = parts.count()
+        pair_count = (parts_count * (parts_count - 1)) // 2 if parts_count >= 2 else 0
+        triple_count = (parts_count * (parts_count - 1) * (parts_count - 2)) // 6 if parts_count >= 3 else 0
+
+        glass_exists = parts.filter(part_type='glass').exists()
+        screen_exists = parts.filter(part_type='screen').exists()
+        glass_screen_combos = 0
+        if glass_exists and screen_exists:
+            other_parts = parts_count - 2
+            glass_screen_combos = 1 + other_parts
+
+        context = {
+            'form': form,
+            'model': model,
+            'parts': parts,
+            'parts_count': parts_count,
+            'pair_count': pair_count,
+            'triple_count': triple_count,
+            'glass_screen_combos': glass_screen_combos,
+            'title': f'{model.name} - Avtomatik kombinatsiyalar',
+            'opts': self.model._meta,
+            'has_permission': True,
+        }
+
+        return render(request, 'admin/botapp/iphonemodel/auto_combinations.html', context)
+
+
+@admin.register(ReplacedPartCombination)
+class ReplacedPartCombinationAdmin(admin.ModelAdmin):
+    form = ReplacedPartCombinationForm
+    list_display = ('name', 'model', 'parts_count', 'custom_price_display', 'priority_display', 'is_active')
+    list_filter = ('model', 'is_active', 'priority')
+    search_fields = ('name',)
+    filter_horizontal = ('parts',)
+
+    def parts_count(self, obj):
+        count = obj.parts.count()
+        return format_html('<span style="color:{};">{} ta</span>', 'green' if count >= 2 else 'red', count)
+
+    parts_count.short_description = _("Qismlar")
+
+    def custom_price_display(self, obj):
+        return format_html('<b>${}</b>', safe_decimal_format(obj.custom_price))
+
+    custom_price_display.short_description = _("Narx")
+
+    def priority_display(self, obj):
+        color = '#4CAF50' if obj.priority >= 10 else '#ff9800' if obj.priority >= 5 else '#9e9e9e'
+        return format_html('<span style="background:{};color:white;padding:2px 8px;border-radius:4px;">{}</span>',
+                           color, obj.priority)
+
+    priority_display.short_description = _("Ustuvorlik")
+
+
+@admin.register(PriceEntry)
+class PriceEntryAdmin(admin.ModelAdmin):
+    list_display = (
+        'model', 'storage_info', 'color_info', 'battery_info', 'box_status', 'parts_info', 'final_price_display')
+    list_filter = ('model', 'has_box', 'sim_type')
+    search_fields = ('model__name', 'note')
+    filter_horizontal = ('replaced_parts',)
+
+    def get_urls(self):
+        urls = super().get_urls()
+        return [
+            path('bulk-generate/', self.admin_site.admin_view(self.bulk_generate_view),
+                 name='botapp_priceentry_bulk_generate'),
+            path('export/', self.admin_site.admin_view(self.export_to_excel), name='botapp_priceentry_export'),
+            path('import/', self.admin_site.admin_view(self.import_from_excel), name='botapp_priceentry_import'),
+        ] + urls
+
+    def bulk_generate_view(self, request):
+        """Avtomatik narxlar yaratish"""
+        if request.method == 'POST':
+            form = BulkGenerateCompleteForm(request.POST)
+            if form.is_valid():
+                try:
+                    with transaction.atomic():
+                        data = form.cleaned_data
+
+                        if not data['storages'] or not data['colors'] or not data['batteries']:
+                            messages.error(request, "⚠️ Asosiy maydonlarni to'ldiring!")
+                            return render(request, 'admin/botapp/priceentry/bulk_generate.html', {
+                                'form': form, 'title': _('Avtomatik yaratish'), 'has_permission': True,
+                                'opts': self.model._meta
+                            })
+
+                        if not data['include_clean'] and not data.get('combinations') and not data.get(
+                                'individual_parts'):
+                            messages.error(request, "⚠️ Hech bo'lmasa bitta variantni tanlang!")
+                            return render(request, 'admin/botapp/priceentry/bulk_generate.html', {
+                                'form': form, 'title': _('Avtomatik yaratish'), 'has_permission': True,
+                                'opts': self.model._meta
+                            })
+
+                        created, skipped = 0, 0
+
+                        for storage in data['storages']:
+                            for color in data['colors']:
+                                for battery in data['batteries']:
+                                    for sim_type in data['sim_types']:
+                                        for box_opt in data['box_options']:
+                                            has_box = (box_opt == 'yes')
+
+                                            # 1. YANGI TELEFON
+                                            if data['include_clean']:
+                                                clean_entries = PriceEntry.objects.filter(
+                                                    model=data['model'], storage=storage, color=color,
+                                                    sim_type=sim_type, battery=battery, has_box=has_box,
+                                                    combination__isnull=True
+                                                )
+                                                exists = any(e.replaced_parts.count() == 0 for e in clean_entries)
+                                                if not exists:
+                                                    PriceEntry.objects.create(
+                                                        model=data['model'], storage=storage, color=color,
+                                                        sim_type=sim_type, battery=battery, has_box=has_box
+                                                    )
+                                                    created += 1
+                                                else:
+                                                    skipped += 1
+
+                                            # 2. KOMBINATSIYALAR
+                                            for combination in data.get('combinations', []):
+                                                if not PriceEntry.objects.filter(
+                                                        model=data['model'], storage=storage, color=color,
+                                                        sim_type=sim_type, battery=battery, has_box=has_box,
+                                                        combination=combination
+                                                ).exists():
+                                                    PriceEntry.objects.create(
+                                                        model=data['model'], storage=storage, color=color,
+                                                        sim_type=sim_type, battery=battery, has_box=has_box,
+                                                        combination=combination
+                                                    )
+                                                    created += 1
+                                                else:
+                                                    skipped += 1
+
+                                            # 3. ALOHIDA QISMLAR
+                                            for part in data.get('individual_parts', []):
+                                                entries = PriceEntry.objects.filter(
+                                                    model=data['model'], storage=storage, color=color,
+                                                    sim_type=sim_type, battery=battery, has_box=has_box,
+                                                    combination__isnull=True
+                                                )
+                                                exists = any(
+                                                    list(e.replaced_parts.all()) == [part]
+                                                    for e in entries
+                                                )
+                                                if not exists:
+                                                    entry = PriceEntry.objects.create(
+                                                        model=data['model'], storage=storage, color=color,
+                                                        sim_type=sim_type, battery=battery, has_box=has_box
+                                                    )
+                                                    entry.replaced_parts.add(part)
+                                                    created += 1
+                                                else:
+                                                    skipped += 1
+
+                        messages.success(request,
+                                         f"✅ {created} ta yaratildi! ({skipped} ta mavjud)" if created > 0 else f"⚠️ Yangi narx yo'q ({skipped} ta mavjud)")
+                        return redirect('admin:botapp_priceentry_changelist')
+                except Exception as e:
+                    messages.error(request, f"❌ Xatolik: {str(e)}")
+        else:
+            form = BulkGenerateCompleteForm(
+                initial={'model': request.GET.get('model')} if request.GET.get('model') else {})
+
+        return render(request, 'admin/botapp/priceentry/bulk_generate.html', {
+            'form': form, 'title': _('Avtomatik yaratish'), 'has_permission': True, 'opts': self.model._meta
+        })
+
+    def export_to_excel(self, request):
+        """📊 FILTER QILINGAN MA'LUMOTLARNI EXPORT QILISH - PROGRESS BILAN"""
+        import openpyxl
+        from openpyxl.styles import Font, Alignment, PatternFill
+        from io import BytesIO
+        import time
+        from django.contrib.admin.views.main import ChangeList
+
+        start_time = time.time()
+
+        # ✅ FILTER QILINGAN MA'LUMOTLARNI OLISH
+        # Admin filter parametrlarini olish
+        from django.db.models import Q
+
+        # DEBUG: Kelgan parametrlarni ko'rish
+        print(f"\n🔍 DEBUG: Request GET parametrlari:")
+        for key, value in request.GET.items():
+            print(f"   - {key}: {value}")
+
+        queryset = PriceEntry.objects.all()
+        original_count = queryset.count()
+
+        # 1. Model filter (model__id__exact=4)
+        if request.GET.get('model__id__exact'):
+            model_id = request.GET.get('model__id__exact')
+            queryset = queryset.filter(model_id=model_id)
+            print(f"✅ Model filter qo'llandi: model_id={model_id}, natija: {queryset.count()} ta")
+
+        # 2. Quti bor filter (has_box__exact=1 yoki 0)
+        if 'has_box__exact' in request.GET:
+            has_box_value = request.GET.get('has_box__exact') == '1'
+            queryset = queryset.filter(has_box=has_box_value)
+            print(f"✅ Quti filter qo'llandi: has_box={has_box_value}, natija: {queryset.count()} ta")
+
+        # 3. SIM turi filter (sim_type__exact=physical yoki esim)
+        if request.GET.get('sim_type__exact'):
+            sim_type = request.GET.get('sim_type__exact')
+            queryset = queryset.filter(sim_type=sim_type)
+            print(f"✅ SIM filter qo'llandi: sim_type={sim_type}, natija: {queryset.count()} ta")
+
+        # 4. Search (q=...)
+        if request.GET.get('q'):
+            search = request.GET.get('q')
+            queryset = queryset.filter(
+                Q(model__name__icontains=search) |
+                Q(note__icontains=search)
+            )
+            print(f"✅ Search qo'llandi: '{search}', natija: {queryset.count()} ta")
+
+        # YAKUNIY NATIJA
+        filtered_count = queryset.count()
+        print(f"\n📊 NATIJA:")
+        print(f"   - Asl ma'lumotlar: {original_count} ta")
+        print(f"   - Filter qilingandan keyin: {filtered_count} ta")
+        print(f"   - Farq: {original_count - filtered_count} ta o'chirildi\n")
+
+        # Optimallashtirilgan queryset
+        entries = queryset.select_related(
+            'model', 'storage', 'color', 'battery', 'combination'
+        ).prefetch_related('replaced_parts').only(
+            'id', 'sim_type', 'has_box', 'manual_adjustment',
+            'model__name', 'model__base_standard_price',
+            'storage__size', 'storage__price_difference',
+            'color__name', 'color__price_difference',
+            'battery__label', 'battery__price_difference',
+            'combination__name', 'combination__custom_price'
+        )
+
+        total_entries = entries.count()
+
+        # Agar ma'lumot bo'lmasa
+        if total_entries == 0:
+            messages.warning(request, "⚠️ Export qilish uchun ma'lumot yo'q!")
+            return redirect('admin:botapp_priceentry_changelist')
+
+        # Excel yaratish
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Telefon narxlari"
+
+        # Sarlavhalar
+        headers = [
+            'ID', 'Model', 'Xotira', 'Rang', 'SIM',
+            'Batareya', 'Quti', 'Qismlar', 'Kombinatsiya', 'Narx ($)'
+        ]
+        ws.append(headers)
+
+        # Sarlavhalar formatini sozlash
+        for col in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col)
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill(
+                start_color="4472C4",
+                end_color="4472C4",
+                fill_type="solid"
+            )
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+
+        # Boshlang'ich xabar
+        print(f"\n{'=' * 60}")
+        print(f"📊 EXCEL EXPORT BOSHLANDI")
+        print(f"{'=' * 60}")
+        print(f"⏰ Vaqt: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"📝 Jami ma'lumotlar: {total_entries} ta")
+        print(f"{'=' * 60}\n")
+
+        # Progress bar uchun
+        processed = 0
+        last_percent = 0
+        chunk_size = 100  # Har 100 tadan keyin progress ko'rsatish
+
+        # Ma'lumotlarni yozish
+        for entry in entries.iterator(chunk_size=chunk_size):
+            try:
+                # Qismlar ma'lumoti (tozalangan formatda)
+                if entry.combination:
+                    parts_display = entry.combination.name.replace("🎯 ", "").strip()
+                    combination_name = entry.combination.name.replace("🎯 ", "").strip()
+                elif hasattr(entry, 'replaced_parts'):
+                    parts = list(entry.replaced_parts.all())
+                    if parts:
+                        parts_list = [p.get_part_type_display() for p in parts]
+                        parts_display = " + ".join(parts_list)
+                        combination_name = ""
+                    else:
+                        parts_display = "Yangi"
+                        combination_name = ""
+                else:
+                    parts_display = "Yangi"
+                    combination_name = ""
+
+                # Narxni hisoblash
+                try:
+                    price = float(entry.get_final_price())
+                except:
+                    price = float(entry.model.base_standard_price or 0)
+                    if entry.storage and entry.storage.price_difference:
+                        price += float(entry.storage.price_difference or 0)
+                    if entry.color and entry.color.price_difference:
+                        price += float(entry.color.price_difference or 0)
+                    if entry.battery and entry.battery.price_difference:
+                        price += float(entry.battery.price_difference or 0)
+                    if not entry.has_box:
+                        price += float(entry.model.box_price_difference or 0)
+                    if entry.sim_type != entry.model.default_sim_type:
+                        price += float(entry.model.alternative_sim_price_difference or 0)
+                    if entry.combination:
+                        price += float(entry.combination.custom_price or 0)
+                    elif hasattr(entry, 'replaced_parts'):
+                        for part in entry.replaced_parts.all():
+                            price += float(part.price_reduction or 0)
+                    price += float(entry.manual_adjustment or 0)
+                    price = max(price, 0)
+
+                # Excel ga yozish
+                ws.append([
+                    entry.pk,
+                    entry.model.name,
+                    entry.storage.size,
+                    entry.color.name if entry.color else "",
+                    "eSIM" if entry.sim_type == 'esim' else "SIM karta",
+                    entry.battery.label,
+                    "Bor" if entry.has_box else "Yo'q",
+                    parts_display,
+                    combination_name,
+                    round(price, 2)
+                ])
+
+                processed += 1
+
+                # Progress ko'rsatish (har 10% da)
+                current_percent = int((processed / total_entries) * 100)
+                if current_percent >= last_percent + 10:
+                    last_percent = current_percent
+                    elapsed = time.time() - start_time
+                    speed = processed / elapsed if elapsed > 0 else 0
+                    remaining = (total_entries - processed) / speed if speed > 0 else 0
+
+                    # Progress bar
+                    bar_length = 40
+                    filled = int(bar_length * processed / total_entries)
+                    bar = '█' * filled + '░' * (bar_length - filled)
+
+                    print(f"\r[{bar}] {current_percent}% | "
+                          f"{processed}/{total_entries} | "
+                          f"⚡ {speed:.1f} ta/s | "
+                          f"⏱️ {remaining:.1f}s qoldi", end='', flush=True)
+
+            except Exception as e:
+                print(f"\n❌ Xato entry {entry.pk if hasattr(entry, 'pk') else 'N/A'}: {e}")
+                continue
+
+        print()  # Yangi qator
+
+        # Column widths ni sozlash
+        column_widths = [8, 25, 12, 15, 10, 15, 8, 40, 30, 12]
+        for i, width in enumerate(column_widths, 1):
+            ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = width
+
+        # Auto filter
+        ws.auto_filter.ref = f"A1:J{processed + 1}"
+
+        # Freeze panes
+        ws.freeze_panes = 'A2'
+
+        # Faylni saqlash
+        buffer = BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+
+        # Yakuniy ma'lumotlar
+        elapsed = time.time() - start_time
+        file_size = len(buffer.getvalue()) / (1024 * 1024)  # MB
+
+        print(f"\n{'=' * 60}")
+        print(f"✅ EXCEL EXPORT MUVAFFAQIYATLI YAKUNLANDI!")
+        print(f"{'=' * 60}")
+        print(f"📊 Jami yozildi: {processed} ta ma'lumot")
+        print(f"📁 Fayl hajmi: {file_size:.2f} MB")
+        print(f"⏱️ Vaqt: {elapsed:.2f} soniya")
+        print(f"⚡ O'rtacha tezlik: {processed / elapsed:.1f} ta/soniya")
+        print(f"{'=' * 60}\n")
+
+        # Django message
+        messages.success(
+            request,
+            f"✅ Excel export muvaffaqiyatli! {processed} ta ma'lumot ({file_size:.2f} MB, {elapsed:.1f}s)"
+        )
+
+        # Response
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = f'attachment; filename="telefon_narxlari_filtered_{processed}.xlsx"'
+        response['Content-Length'] = len(buffer.getvalue())
+
+        return response
+
+    def import_from_excel(self, request):
+        """📥 Excel dan import qilish (damage formatini tozalash)"""
+        if request.method == 'POST' and request.FILES.get('excel_file'):
+            try:
+                excel_file = request.FILES['excel_file']
+                wb = openpyxl.load_workbook(excel_file)
+                ws = wb.active
+
+                created, skipped, errors = 0, 0, []
+
+                with transaction.atomic():
+                    for row_num, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+                        if not any(row):
+                            continue
+
+                        try:
+                            model_name, storage_size, color_name, sim_type, battery_label, has_box_str, parts_str, combination_str, price_str = row
+
+                            model = iPhoneModel.objects.filter(name__icontains=model_name).first()
+                            if not model:
+                                errors.append(f"Qator {row_num}: Model '{model_name}' topilmadi")
+                                continue
+
+                            storage = model.storages.filter(size=storage_size).first()
+                            if not storage:
+                                errors.append(f"Qator {row_num}: Xotira '{storage_size}' topilmadi")
+                                continue
+
+                            color = model.available_colors.filter(
+                                name__icontains=color_name).first() if color_name else None
+
+                            battery = model.battery_ranges.filter(label=battery_label).first()
+                            if not battery:
+                                errors.append(f"Qator {row_num}: Batareya '{battery_label}' topilmadi")
+                                continue
+
+                            sim_map = {'Physical': 'physical', 'SIM karta': 'physical', 'eSIM': 'esim'}
+                            sim_type_value = sim_map.get(sim_type, 'physical')
+
+                            has_box = has_box_str == "Bor"
+
+                            combination = None
+                            if combination_str:
+                                # Kombinatsiya nomini tozalash
+                                clean_combo_name = combination_str.replace("🎯 ", "").strip()
+                                combination = model.part_combinations.filter(name=clean_combo_name,
+                                                                             is_active=True).first()
+
+                            # Qo'shimcha: parts_str ni tozalash
+                            clean_parts_str = parts_str.replace("🔧 ", "").replace(", ", "+").strip()
+
+                            if PriceEntry.objects.filter(
+                                    model=model, storage=storage, color=color,
+                                    sim_type=sim_type_value, battery=battery, has_box=has_box,
+                                    combination=combination
+                            ).exists():
+                                skipped += 1
+                                continue
+
+                            entry = PriceEntry.objects.create(
+                                model=model, storage=storage, color=color,
+                                sim_type=sim_type_value, battery=battery, has_box=has_box,
+                                combination=combination
+                            )
+
+                            if not combination and clean_parts_str and clean_parts_str != "Yangi":
+                                parts_names = clean_parts_str.split("+")
+                                for part_name in parts_names:
+                                    part = model.replaced_parts.filter(part_type__icontains=part_name,
+                                                                       is_active=True).first()
+                                    if part:
+                                        entry.replaced_parts.add(part)
+
+                            created += 1
+
+                        except Exception as e:
+                            errors.append(f"Qator {row_num}: {str(e)}")
+
+                if errors:
+                    messages.warning(request, f"⚠️ {len(errors)} ta xatolik: " + "; ".join(errors[:5]))
+
+                if created > 0:
+                    messages.success(request, f"✅ {created} ta import qilindi! ({skipped} ta mavjud)")
+                else:
+                    messages.info(request, f"ℹ️ Yangi narx yo'q ({skipped} ta mavjud)")
+
+                return redirect('admin:botapp_priceentry_changelist')
+
+            except Exception as e:
+                messages.error(request, f"❌ Xatolik: {str(e)}")
+
+        return render(request, 'admin/botapp/priceentry/import.html', {
+            'title': _('Excel import'), 'has_permission': True, 'opts': self.model._meta
+        })
+
+    def storage_info(self, obj):
+        return format_html('<span style="background:#e3f2fd;padding:4px 8px;border-radius:4px;">{}</span>',
+                           obj.storage.size)
+
+    storage_info.short_description = _("Xotira")
+
+    def color_info(self, obj):
+        return obj.color.name if obj.color else "—"
+
+    color_info.short_description = _("Rang")
+
+    def battery_info(self, obj):
+        return format_html('<span style="background:#fff3e0;padding:4px 8px;border-radius:4px;">{}</span>',
+                           obj.battery.label)
+
+    battery_info.short_description = _("Batareya")
+
+    def box_status(self, obj):
+        return format_html('<span style="color:{};">{}</span>', 'green' if obj.has_box else 'orange',
+                           '✓ Bor' if obj.has_box else '✗ Yo\'q')
+
+    box_status.short_description = _("Quti")
+
+    def parts_info(self, obj):
+        if obj.combination:
+            return format_html('<span style="color:purple;">🎯 {} ta</span>', obj.combination.parts.count())
+        count = obj.replaced_parts.count()
+        return format_html('<span style="color:green;">✓ Yangi</span>') if count == 0 else format_html(
+            '<span style="color:red;">🔧 {} ta</span>', count)
+
+    parts_info.short_description = _("Qismlar")
+
+    def final_price_display(self, obj):
+        return format_html('<b style="color:#1976d2;">{}</b>', obj.get_final_price_display())
+
+    final_price_display.short_description = _("Narx")
+
+    def changelist_view(self, request, extra_context=None):
+        """Filter parametrlarini export URL ga uzatish"""
+        extra_context = extra_context or {}
+
+        # Filter parametrlarini export URL ga qo'shish
+        query_string = request.GET.urlencode()
+        if query_string:
+            # Filter parametrlari bor
+            export_url = f'/admin/botapp/priceentry/export/?{query_string}'
+            print(f"📎 Export URL (filter bilan): {export_url}")
+        else:
+            # Filter yo'q
+            export_url = '/admin/botapp/priceentry/export/'
+            print(f"📎 Export URL (filtrsiz): {export_url}")
+
+        extra_context.update({
+            'show_bulk_generate': True,
+            'show_excel_export': True,
+            'show_excel_import': True,
+            'export_url': export_url,
+        })
+        return super().changelist_view(request, extra_context=extra_context)

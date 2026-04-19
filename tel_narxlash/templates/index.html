@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+{% block title %}Narx Kalkulyatori — iPhone{% endblock %}
+{% block nav_index %}active{% endblock %}
+
+{% block extra_style %}
+.step-card { transition: all 0.2s; }
+.step-card.disabled { opacity: 0.45; pointer-events: none; }
+.option-btn { border: 2px solid #dee2e6; border-radius: 8px; padding: 10px 16px; cursor: pointer;
+              background: white; width: 100%; text-align: left; transition: all 0.15s; margin-bottom: 8px; }
+.option-btn:hover { border-color: #1a1a2e; background: #f0f2f8; }
+.option-btn.selected { border-color: #1a1a2e; background: #1a1a2e; color: white; }
+.option-btn .badge-diff { font-size: 0.75rem; float: right; margin-top: 2px; }
+.price-result { background: linear-gradient(135deg, #1a1a2e, #0f3460); color: white;
+                border-radius: 16px; padding: 2rem; text-align: center; }
+.breakdown-item { font-size: 0.85rem; opacity: 0.85; }
+.step-number { width: 28px; height: 28px; background: #1a1a2e; color: white;
+               border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+               font-size: 0.8rem; font-weight: 700; margin-right: 8px; }
+.part-check { cursor: pointer; }
+.part-check input { cursor: pointer; }
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h2 class="fw-bold mb-1"><i class="bi bi-calculator-fill me-2 text-primary"></i>Narx Kalkulyatori</h2>
+        <p class="text-muted">Telefon holatini tanlang — narx avtomatik hisoblanadi</p>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- LEFT: Steps -->
+    <div class="col-lg-7">
+
+        <!-- Step 1: Model -->
+        <div class="card mb-3 step-card" id="step1">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3">
+                    <span class="step-number">1</span>Model tanlang
+                </h6>
+                <select class="form-select form-select-lg" id="modelSelect">
+                    <option value="">— Model tanlang —</option>
+                    {% for m in models %}
+                    <option value="{{ m.id }}" data-base="{{ m.base_standard_price }}"
+                            data-box="{{ m.box_price_difference }}"
+                            data-simdiff="{{ m.alternative_sim_price_difference }}"
+                            data-defaultsim="{{ m.default_sim_type }}">
+                        {{ m.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <!-- Step 2: Xotira -->
+        <div class="card mb-3 step-card disabled" id="step2">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3"><span class="step-number">2</span>Xotira hajmi</h6>
+                <div id="storageOptions"><p class="text-muted small">Avval model tanlang</p></div>
+            </div>
+        </div>
+
+        <!-- Step 3: Rang -->
+        <div class="card mb-3 step-card disabled" id="step3">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3"><span class="step-number">3</span>Rang</h6>
+                <div id="colorOptions"><p class="text-muted small">Avval model tanlang</p></div>
+            </div>
+        </div>
+
+        <!-- Step 4: Batareya -->
+        <div class="card mb-3 step-card disabled" id="step4">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3"><span class="step-number">4</span>Batareya holati</h6>
+                <div id="batteryOptions"><p class="text-muted small">Avval model tanlang</p></div>
+            </div>
+        </div>
+
+        <!-- Step 5: Qo'shimcha parametrlar -->
+        <div class="card mb-3 step-card disabled" id="step5">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3"><span class="step-number">5</span>Qo'shimcha</h6>
+                <div class="row g-3">
+                    <div class="col-sm-6">
+                        <label class="form-label fw-semibold small">Quti</label>
+                        <div>
+                            <button type="button" class="option-btn selected" onclick="setBox(true, this)">
+                                <i class="bi bi-box-seam me-1"></i>Quti bor
+                            </button>
+                            <button type="button" class="option-btn" onclick="setBox(false, this)">
+                                <i class="bi bi-x-circle me-1"></i>Quti yo'q
+                                <span class="badge-diff text-danger" id="boxDiffLabel"></span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label fw-semibold small">SIM turi</label>
+                        <div id="simOptions">
+                            <button type="button" class="option-btn selected" onclick="setSim('physical', this)">
+                                <i class="bi bi-sim me-1"></i>SIM karta
+                            </button>
+                            <button type="button" class="option-btn" onclick="setSim('esim', this)">
+                                <i class="bi bi-wifi me-1"></i>eSIM
+                                <span class="badge-diff text-danger" id="simDiffLabel"></span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 6: Almashgan qismlar -->
+        <div class="card mb-3 step-card disabled" id="step6">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3">
+                    <span class="step-number">6</span>Almashgan qismlar
+                    <small class="text-muted fw-normal">(ixtiyoriy)</small>
+                </h6>
+                <div id="partsOptions"><p class="text-muted small">Avval model tanlang</p></div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- RIGHT: Price result -->
+    <div class="col-lg-5">
+        <div class="sticky-top" style="top: 80px;">
+            <div class="price-result mb-3" id="priceResult">
+                <div class="mb-2"><i class="bi bi-tag-fill fs-3 opacity-75"></i></div>
+                <div class="text-white-50 mb-1 small">Hisoblangan narx</div>
+                <div id="priceDisplay" class="price-badge text-white mb-3">
+                    Tanlang...
+                </div>
+                <div id="breakdownList" class="text-start"></div>
+            </div>
+
+            <!-- Model detail link -->
+            <div id="modelLink" class="d-none">
+                <a id="modelDetailLink" href="#" class="btn btn-outline-secondary w-100 mb-3">
+                    <i class="bi bi-info-circle me-1"></i>Bu model haqida batafsil
+                </a>
+            </div>
+
+            <!-- Compare button -->
+            <a href="/taqqoslash/" class="btn btn-outline-dark w-100">
+                <i class="bi bi-arrow-left-right me-1"></i>Modellarni taqqoslash
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// State
+let state = {
+    modelId: null, storageId: null, colorId: null,
+    batteryId: null, hasBox: true, simType: 'physical',
+    partIds: [], modelData: null
+};
+
+// Model tanlash
+document.getElementById('modelSelect').addEventListener('change', function() {
+    const modelId = this.value;
+    if (!modelId) {
+        resetAll();
+        return;
+    }
+    state.modelId = modelId;
+    state.storageId = null; state.colorId = null;
+    state.batteryId = null; state.partIds = [];
+
+    fetch(`/api/model-options/?model_id=${modelId}`)
+        .then(r => r.json())
+        .then(data => {
+            state.modelData = data.model;
+            state.simType = data.model.default_sim;
+            state.hasBox = true;
+
+            renderOptions('storageOptions', data.storages, 'storage', s =>
+                `<strong>${s.size}</strong>${s.price_diff !== 0 ? ` <span class="badge-diff ${s.price_diff < 0 ? 'text-danger' : 'text-success'}">${s.price_diff > 0 ? '+' : ''}$${s.price_diff}</span>` : ''}`
+            );
+            renderOptions('colorOptions', data.colors, 'color', c =>
+                `${c.name} <small class="text-muted">${c.type === 'premium' ? '(Premium)' : ''}</small>${c.price_diff !== 0 ? ` <span class="badge-diff ${c.price_diff < 0 ? 'text-danger' : 'text-success'}">${c.price_diff > 0 ? '+' : ''}$${c.price_diff}</span>` : ''}`
+            );
+            renderOptions('batteryOptions', data.batteries, 'battery', b =>
+                `<i class="bi bi-battery-half me-1"></i>${b.label}${b.price_diff !== 0 ? ` <span class="badge-diff text-danger">${b.price_diff > 0 ? '+' : ''}$${b.price_diff}</span>` : ''}`
+            );
+            renderParts(data.parts);
+
+            // SIM buttons update
+            const defaultSim = data.model.default_sim;
+            const simDiff = data.model.sim_diff;
+            document.getElementById('simDiffLabel').textContent = simDiff !== 0 ? `${simDiff > 0 ? '+' : ''}$${simDiff}` : '';
+            document.getElementById('boxDiffLabel').textContent = `$${data.model.box_diff}`;
+
+            // Reset sim buttons to default
+            document.querySelectorAll('#simOptions .option-btn').forEach(btn => btn.classList.remove('selected'));
+            document.querySelectorAll('#simOptions .option-btn')[defaultSim === 'physical' ? 0 : 1].classList.add('selected');
+
+            // Enable steps
+            ['step2','step3','step4','step5','step6'].forEach(s => document.getElementById(s).classList.remove('disabled'));
+
+            // Model link
+            document.getElementById('modelLink').classList.remove('d-none');
+            document.getElementById('modelDetailLink').href = `/model/${modelId}/`;
+
+            calculatePrice();
+        });
+});
+
+function renderOptions(containerId, items, type, labelFn) {
+    const container = document.getElementById(containerId);
+    if (!items.length) {
+        container.innerHTML = '<p class="text-muted small">Ma\'lumot yo\'q</p>';
+        return;
+    }
+    container.innerHTML = items.map(item => `
+        <button type="button" class="option-btn"
+                onclick="selectOption('${type}', ${item.id}, this)"
+                data-id="${item.id}">
+            ${labelFn(item)}
+        </button>
+    `).join('');
+}
+
+function renderParts(parts) {
+    const container = document.getElementById('partsOptions');
+    if (!parts.length) {
+        container.innerHTML = '<p class="text-muted small">Qismlar yo\'q</p>';
+        return;
+    }
+    container.innerHTML = `
+        <div class="row g-2">
+        ${parts.map(p => `
+            <div class="col-sm-6">
+                <label class="part-check d-flex align-items-center gap-2 option-btn p-2 mb-0"
+                       style="user-select:none;">
+                    <input type="checkbox" value="${p.id}" onchange="togglePart(${p.id}, this)">
+                    <span>${p.name}
+                        <small class="text-danger d-block">$${p.price_reduction}</small>
+                    </span>
+                </label>
+            </div>
+        `).join('')}
+        </div>
+    `;
+}
+
+function selectOption(type, id, btn) {
+    // Deselect siblings
+    btn.closest('div').querySelectorAll('.option-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    state[type + 'Id'] = id;
+    calculatePrice();
+}
+
+function setBox(val, btn) {
+    btn.closest('div').querySelectorAll('.option-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    state.hasBox = val;
+    calculatePrice();
+}
+
+function setSim(val, btn) {
+    btn.closest('div').querySelectorAll('.option-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    state.simType = val;
+    calculatePrice();
+}
+
+function togglePart(id, checkbox) {
+    if (checkbox.checked) {
+        if (!state.partIds.includes(id)) state.partIds.push(id);
+    } else {
+        state.partIds = state.partIds.filter(p => p !== id);
+    }
+    calculatePrice();
+}
+
+function calculatePrice() {
+    if (!state.modelId || !state.storageId || !state.batteryId) {
+        document.getElementById('priceDisplay').textContent = 'Tanlang...';
+        document.getElementById('breakdownList').innerHTML = '';
+        return;
+    }
+
+    let url = `/api/calculate/?model_id=${state.modelId}&storage_id=${state.storageId}` +
+        `&battery_id=${state.batteryId}&has_box=${state.hasBox}&sim_type=${state.simType}`;
+    if (state.colorId) url += `&color_id=${state.colorId}`;
+    state.partIds.forEach(id => url += `&part_ids=${id}`);
+
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            if (data.price !== undefined) {
+                document.getElementById('priceDisplay').textContent = data.price_display;
+                const bd = document.getElementById('breakdownList');
+                bd.innerHTML = data.breakdown.map(b =>
+                    `<div class="breakdown-item">${b}</div>`
+                ).join('');
+            }
+        });
+}
+
+function resetAll() {
+    state = { modelId: null, storageId: null, colorId: null,
+              batteryId: null, hasBox: true, simType: 'physical',
+              partIds: [], modelData: null };
+    ['step2','step3','step4','step5','step6'].forEach(s => document.getElementById(s).classList.add('disabled'));
+    ['storageOptions','colorOptions','batteryOptions','partsOptions'].forEach(id => {
+        document.getElementById(id).innerHTML = '<p class="text-muted small">Avval model tanlang</p>';
+    });
+    document.getElementById('priceDisplay').textContent = 'Tanlang...';
+    document.getElementById('breakdownList').innerHTML = '';
+    document.getElementById('modelLink').classList.add('d-none');
+}
+</script>
+{% endblock %}

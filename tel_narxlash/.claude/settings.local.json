@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//d/tel_narxlash//**)",
+      "Bash(venv/Scripts/python.exe manage.py check)",
+      "Bash(venv/Scripts/python.exe manage.py runserver --check)",
+      "Bash(venv/Scripts/python.exe -c ':*)"
+    ]
+  }
+}

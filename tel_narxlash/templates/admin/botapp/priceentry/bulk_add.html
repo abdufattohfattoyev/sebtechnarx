@@ -1,0 +1,332 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    .form-row {
+        margin-bottom: 20px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 8px;
+    }
+    .form-row label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 8px;
+        color: #333;
+    }
+    .form-row input[type="text"],
+    .form-row input[type="number"],
+    .form-row select,
+    .form-row textarea {
+        width: 100%;
+        padding: 10px;
+        border: 2px solid #ddd;
+        border-radius: 6px;
+        font-size: 14px;
+    }
+    .form-row input[type="text"]:focus,
+    .form-row input[type="number"]:focus,
+    .form-row select:focus,
+    .form-row textarea:focus {
+        border-color: #417690;
+        outline: none;
+    }
+    .checkbox-group {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 10px;
+        padding: 15px;
+        background: white;
+        border: 2px solid #ddd;
+        border-radius: 6px;
+        max-height: 300px;
+        overflow-y: auto;
+    }
+    .checkbox-group label {
+        display: flex;
+        align-items: center;
+        padding: 8px;
+        background: #f0f0f0;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .checkbox-group label:hover {
+        background: #e0e0e0;
+    }
+    .checkbox-group input[type="checkbox"] {
+        margin-right: 8px;
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+    }
+    .submit-row {
+        padding: 20px;
+        text-align: right;
+        background: #f8f9fa;
+        border-top: 2px solid #ddd;
+        margin-top: 20px;
+    }
+    .submit-row input[type="submit"] {
+        background: #417690;
+        color: white;
+        padding: 12px 30px;
+        border: none;
+        border-radius: 6px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+    .submit-row input[type="submit"]:hover {
+        background: #2d5468;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+    .helptext {
+        display: block;
+        margin-top: 5px;
+        color: #666;
+        font-size: 13px;
+    }
+    .alert {
+        padding: 15px;
+        margin-bottom: 20px;
+        border-radius: 6px;
+        border-left: 4px solid;
+    }
+    .alert-info {
+        background: #d1ecf1;
+        border-color: #0c5460;
+        color: #0c5460;
+    }
+    .alert-warning {
+        background: #fff3cd;
+        border-color: #ffc107;
+        color: #856404;
+    }
+    .combination-info {
+        background: #e8f5e9;
+        padding: 12px;
+        border-left: 4px solid #4CAF50;
+        border-radius: 4px;
+        margin: 10px 0;
+    }
+    .combination-info h4 {
+        margin: 0 0 8px 0;
+        color: #2e7d32;
+        font-size: 14px;
+    }
+    .combination-item {
+        padding: 6px 10px;
+        background: white;
+        border: 1px solid #a5d6a7;
+        border-radius: 4px;
+        margin: 5px 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .combination-item .name {
+        font-weight: 600;
+        color: #333;
+    }
+    .combination-item .price {
+        color: #d32f2f;
+        font-weight: bold;
+    }
+</style>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const modelSelect = document.querySelector('select[name="model"]');
+    const storageSelect = document.querySelector('select[name="storage"]');
+
+    if (modelSelect) {
+        modelSelect.addEventListener('change', function() {
+            if (this.value) {
+                // Formani yuborish (storage va colorlarni yangilash uchun)
+                const form = this.closest('form');
+                const url = new URL(window.location.href);
+                url.searchParams.set('model', this.value);
+                window.location.href = url.toString();
+            }
+        });
+    }
+
+    if (storageSelect) {
+        storageSelect.addEventListener('change', function() {
+            if (this.value) {
+                const form = this.closest('form');
+                const url = new URL(window.location.href);
+                url.searchParams.set('model', modelSelect.value);
+                url.searchParams.set('storage', this.value);
+                window.location.href = url.toString();
+            }
+        });
+    }
+});
+</script>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+    &rsaquo; <a href="{% url 'admin:botapp_priceentry_changelist' %}">{% trans 'Telefon narxlari' %}</a>
+    &rsaquo; {% trans 'Ko\'p ranglar uchun narx qo\'shish' %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="alert alert-info">
+    <strong>💡 Yangi tizim:</strong> Bir vaqtda bir nechta ranglar uchun bir xil narxni belgilashingiz mumkin.
+    <br><strong>Kombinatsiya:</strong> Agar telefonda qismlar kombinatsiyasi bo'lsa (masalan, Ekran+Batareyka), uni tanlang.
+</div>
+
+<div class="alert alert-warning">
+    <strong>⚠️ MUHIM - Kombinatsiya va alohida qismlar:</strong>
+    <ul style="margin: 10px 0 0 20px; padding: 0;">
+        <li><strong>Kombinatsiya tanlasangiz</strong> → Uning narxi avtomatik ishlatiladi</li>
+        <li><strong>Kombinatsiya tanlamasangiz</strong> → "Almashgan qism yo'q" deb saqlanadi</li>
+        <li>Kombinatsiyalar ro'yxati: <a href="{% url 'admin:botapp_replacedpartcombination_changelist' %}" target="_blank" style="color: #007bff;">Admin → Qismlar kombinatsiyasi</a></li>
+        <li><strong>Alohida qismlar:</strong> Bu formada faqat kombinatsiya tanlanadi, alohida qismlar yo'q</li>
+    </ul>
+</div>
+
+<form method="post">
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+        <div class="alert alert-danger">
+            {{ form.non_field_errors }}
+        </div>
+    {% endif %}
+
+    <div class="form-row">
+        <label for="{{ form.model.id_for_label }}">{{ form.model.label }} <span style="color:red;">*</span></label>
+        {{ form.model }}
+        <span class="helptext">iPhone modelini tanlang</span>
+        {% if form.model.errors %}
+            <span class="error">{{ form.model.errors }}</span>
+        {% endif %}
+    </div>
+
+    <div class="form-row">
+        <label for="{{ form.storage.id_for_label }}">{{ form.storage.label }} <span style="color:red;">*</span></label>
+        {{ form.storage }}
+        <span class="helptext">Xotira hajmini tanlang</span>
+        {% if form.storage.errors %}
+            <span class="error">{{ form.storage.errors }}</span>
+        {% endif %}
+    </div>
+
+    <div class="form-row">
+        <label>{{ form.colors.label }} <span style="color:red;">*</span></label>
+        <span class="helptext">Bir nechta rangni tanlashingiz mumkin</span>
+        <div class="checkbox-group">
+            {% for choice in form.colors %}
+                {{ choice }}
+            {% empty %}
+                <div style="padding: 20px; text-align: center; color: #999;">
+                    Avval model va xotira tanlang
+                </div>
+            {% endfor %}
+        </div>
+        {% if form.colors.errors %}
+            <span class="error">{{ form.colors.errors }}</span>
+        {% endif %}
+    </div>
+
+    <div class="form-row">
+        <label for="{{ form.sim_type.id_for_label }}">{{ form.sim_type.label }} <span style="color:red;">*</span></label>
+        {{ form.sim_type }}
+        <span class="helptext">SIM karta turini tanlang</span>
+        {% if form.sim_type.errors %}
+            <span class="error">{{ form.sim_type.errors }}</span>
+        {% endif %}
+    </div>
+
+    <div class="form-row">
+        <label for="{{ form.battery.id_for_label }}">{{ form.battery.label }} <span style="color:red;">*</span></label>
+        {{ form.battery }}
+        <span class="helptext">Batareya holatini tanlang</span>
+        {% if form.battery.errors %}
+            <span class="error">{{ form.battery.errors }}</span>
+        {% endif %}
+    </div>
+
+    <div class="form-row">
+        <label for="{{ form.has_box.id_for_label }}">
+            {{ form.has_box }} {{ form.has_box.label }}
+        </label>
+        <span class="helptext">Quti bor/yo'q</span>
+        {% if form.has_box.errors %}
+            <span class="error">{{ form.has_box.errors }}</span>
+        {% endif %}
+    </div>
+
+    <!-- YANGI: Kombinatsiya tanlov -->
+    <div class="form-row">
+        <label for="{{ form.combination.id_for_label }}">{{ form.combination.label }}</label>
+        {{ form.combination }}
+        <span class="helptext">
+            Agar telefonda qismlar kombinatsiyasi bo'lsa (masalan, Ekran+Batareyka), uni tanlang.<br>
+            Yo'q bo'lsa, bo'sh qoldiring (yangi telefon deb saqlanadi).
+        </span>
+
+        {% if form.combination.errors %}
+            <span class="error">{{ form.combination.errors }}</span>
+        {% endif %}
+    </div>
+
+    <div class="form-row">
+        <label for="{{ form.note.id_for_label }}">{{ form.note.label }}</label>
+        {{ form.note }}
+        <span class="helptext">Qo'shimcha izoh (ixtiyoriy)</span>
+        {% if form.note.errors %}
+            <span class="error">{{ form.note.errors }}</span>
+        {% endif %}
+    </div>
+
+    <div class="submit-row">
+        <input type="submit" value="✅ Barcha tanlangan ranglar uchun saqlash">
+        <a href="{% url 'admin:botapp_priceentry_changelist' %}" style="display: inline-block; margin-left: 10px; padding: 12px 30px; background: #dc3545; color: white; text-decoration: none; border-radius: 6px;">
+            ❌ Bekor qilish
+        </a>
+    </div>
+
+    <!-- Yaratilishi mumkin bo'lgan narxlar soni -->
+    <div class="alert alert-info" style="margin-top: 20px;">
+        <strong>📊 Yaratilishi mumkin bo'lgan narxlar:</strong>
+        <div id="priceCount" style="font-size: 18px; margin-top: 10px; color: #2e7d32; font-weight: bold;">
+            Ranglarni tanlang...
+        </div>
+    </div>
+</form>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const colorCheckboxes = document.querySelectorAll('input[name="colors"]');
+    const priceCountDiv = document.getElementById('priceCount');
+
+    // Ranglar sonini hisoblash
+    function updatePriceCount() {
+        const selectedColors = document.querySelectorAll('input[name="colors"]:checked').length;
+        if (selectedColors > 0) {
+            priceCountDiv.innerHTML = `<strong>${selectedColors}</strong> ta rang uchun <strong>${selectedColors}</strong> ta narx yaratiladi`;
+        } else {
+            priceCountDiv.innerHTML = 'Ranglarni tanlang...';
+        }
+    }
+
+    // Event listeners
+    colorCheckboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', updatePriceCount);
+    });
+
+    // Dastlabki hisoblash
+    updatePriceCount();
+});
+</script>
+{% endblock %}

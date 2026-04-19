@@ -1,0 +1,630 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    .content {
+        max-width: 1000px;
+        margin: 0 auto;
+    }
+
+    .header-section {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 25px;
+        border-radius: 12px;
+        margin-bottom: 25px;
+    }
+
+    .header-section h1 {
+        margin: 0 0 10px 0;
+        font-size: 28px;
+        font-weight: 600;
+    }
+
+    .header-section .description {
+        opacity: 0.9;
+        font-size: 15px;
+    }
+
+    .form-section {
+        background: white;
+        border-radius: 12px;
+        padding: 25px;
+        margin-bottom: 25px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        border: 1px solid #e0e0e0;
+    }
+
+    .section-title {
+        color: #2c3e50;
+        font-size: 20px;
+        font-weight: 600;
+        margin-bottom: 20px;
+        padding-bottom: 10px;
+        border-bottom: 2px solid #f0f0f0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .section-title .icon {
+        font-size: 24px;
+    }
+
+    .form-group {
+        margin-bottom: 25px;
+    }
+
+    .form-label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 8px;
+        color: #333;
+        font-size: 15px;
+    }
+
+    .form-label .required {
+        color: #e74c3c;
+    }
+
+    .form-control {
+        width: 100%;
+        max-width: 400px;
+        padding: 12px 15px;
+        border: 2px solid #e0e0e0;
+        border-radius: 8px;
+        font-size: 14px;
+        transition: all 0.3s ease;
+        background: white;
+    }
+
+    .form-control:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .form-control.number-input {
+        max-width: 150px;
+    }
+
+    .form-text {
+        display: block;
+        margin-top: 6px;
+        color: #666;
+        font-size: 13px;
+        line-height: 1.4;
+    }
+
+    .form-text strong {
+        color: #2c3e50;
+    }
+
+    .checkbox-group {
+        display: flex;
+        align-items: center;
+        margin: 15px 0;
+        padding: 12px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        transition: background 0.3s ease;
+    }
+
+    .checkbox-group:hover {
+        background: #f0f2f5;
+    }
+
+    .checkbox-group input[type="checkbox"] {
+        width: 20px;
+        height: 20px;
+        margin-right: 12px;
+        cursor: pointer;
+        accent-color: #4CAF50;
+    }
+
+    .checkbox-group label {
+        margin: 0;
+        cursor: pointer;
+        font-weight: 500;
+        color: #333;
+        flex-grow: 1;
+    }
+
+    .warning-box {
+        background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+        border: 2px solid #ffc107;
+        padding: 20px;
+        border-radius: 10px;
+        margin: 25px 0;
+    }
+
+    .warning-box strong {
+        color: #856404;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 10px;
+        font-size: 16px;
+    }
+
+    .parts-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 12px;
+        margin: 20px 0;
+    }
+
+    .part-card {
+        background: white;
+        padding: 15px;
+        border-radius: 10px;
+        border: 2px solid #e0e0e0;
+        transition: all 0.3s ease;
+        text-align: center;
+    }
+
+    .part-card:hover {
+        border-color: #667eea;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    .part-name {
+        font-weight: 600;
+        color: #2c3e50;
+        margin-bottom: 8px;
+        font-size: 14px;
+    }
+
+    .part-price {
+        font-size: 16px;
+        font-weight: 700;
+        color: #e74c3c;
+    }
+
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin: 25px 0;
+    }
+
+    .stat-card {
+        background: white;
+        padding: 20px;
+        border-radius: 12px;
+        text-align: center;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        border: 2px solid transparent;
+        transition: all 0.3s ease;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .stat-card.success {
+        border-color: #4CAF50;
+    }
+
+    .stat-card.warning {
+        border-color: #ff9800;
+    }
+
+    .stat-label {
+        font-size: 14px;
+        color: #666;
+        margin-bottom: 10px;
+    }
+
+    .stat-value {
+        font-size: 36px;
+        font-weight: 800;
+        margin: 10px 0;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .stat-card.warning .stat-value {
+        background: linear-gradient(135deg, #ff9800 0%, #ff5722 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .button-group {
+        display: flex;
+        gap: 15px;
+        margin-top: 30px;
+        padding-top: 25px;
+        border-top: 2px solid #f0f0f0;
+    }
+
+    .btn-primary {
+        background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);
+        color: white;
+        padding: 14px 35px;
+        border: none;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+    }
+
+    .btn-secondary {
+        background: #f8f9fa;
+        color: #333;
+        padding: 14px 25px;
+        border: 2px solid #ddd;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .btn-secondary:hover {
+        background: #e9ecef;
+        border-color: #ccc;
+        transform: translateY(-2px);
+    }
+
+    .max-reduction-info {
+        background: #e3f2fd;
+        border: 2px solid #2196F3;
+        padding: 15px;
+        border-radius: 8px;
+        margin-top: 10px;
+        font-size: 14px;
+        color: #1565c0;
+    }
+
+    .example-box {
+        background: #f9f9f9;
+        border-left: 4px solid #4CAF50;
+        padding: 15px;
+        margin: 15px 0;
+        border-radius: 0 8px 8px 0;
+    }
+
+    .example-title {
+        font-weight: 600;
+        color: #2c3e50;
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .example-content {
+        color: #666;
+        font-size: 13px;
+        line-height: 1.5;
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">🏠 Bosh sahifa</a>
+    &rsaquo; <a href="{% url 'admin:botapp_iphonemodel_changelist' %}">📱 iPhone Modellari</a>
+    &rsaquo; <a href="{% url 'admin:botapp_iphonemodel_change' model.pk %}">{{ model.name }}</a>
+    &rsaquo; 🎯 Avtomatik kombinatsiyalar
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="content">
+    <!-- HEADER SECTION -->
+    <div class="header-section">
+        <h1>🎯 {{ model.name }} - Avtomatik kombinatsiyalar yaratish</h1>
+        <div class="description">
+            Tizim barcha mumkin bo'lgan qism kombinatsiyalarini avtomatik hisoblab yaratadi.
+            Faqat chegirma foizi va limitlarni belgilang.
+        </div>
+    </div>
+
+    <!-- MAVJUD QISMLAR -->
+    <div class="form-section">
+        <div class="section-title">
+            <span class="icon">📦</span>
+            Mavjud qismlar ({{ parts_count }} ta)
+        </div>
+
+        {% if parts %}
+        <div class="parts-grid">
+            {% for part in parts %}
+            <div class="part-card">
+                <div class="part-name">{{ part.get_part_type_display }}</div>
+                <div class="part-price">-${{ part.price_reduction|floatformat:2 }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div style="text-align: center; padding: 30px; color: #666; background: #f9f9f9; border-radius: 8px;">
+            ❌ Bu model uchun hech qanday qism mavjud emas. Avval qismlarni qo'shing.
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- STATISTIKA -->
+    <div class="form-section">
+        <div class="section-title">
+            <span class="icon">📊</span>
+            Statistika
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card success">
+                <div class="stat-label">2 talik kombinatsiyalar</div>
+                <div class="stat-value">{{ pair_count }}</div>
+                <div style="font-size: 13px; color: #666;">
+                    {{ parts_count }} ta qismdan
+                </div>
+            </div>
+
+            <div class="stat-card success">
+                <div class="stat-label">3 talik kombinatsiyalar</div>
+                <div class="stat-value">{{ triple_count }}</div>
+                <div style="font-size: 13px; color: #666;">
+                    {{ parts_count }} ta qismdan
+                </div>
+            </div>
+
+            {% if glass_screen_combos > 0 %}
+            <div class="stat-card warning">
+                <div class="stat-label">Oyna+Ekran kombinatsiyalar</div>
+                <div class="stat-value">{{ glass_screen_combos }}</div>
+                <div style="font-size: 13px; color: #666;">
+                    Avtomatik o'tkaziladi
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if glass_screen_combos > 0 %}
+    <div class="warning-box">
+        <strong>⚠️ Eslatma: Oyna va Ekran birgalikda bo'lmasligi kerak</strong>
+        <div style="color: #856404; font-size: 14px; line-height: 1.5;">
+            Tizim avtomatik ravishda Oyna va Ekran birgalikda bo'lgan <strong>{{ glass_screen_combos }} ta</strong>
+            kombinatsiyani o'tkazib yuboradi. Bu qoidalarga muvofiq.
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- ASOSIY FORMA -->
+    <form method="post" id="autoCombinationForm">
+        {% csrf_token %}
+
+        <!-- 2-TALIK KOMBINATSIYALAR -->
+        <div class="form-section">
+            <div class="section-title">
+                <span class="icon">🔹</span>
+                2 talik kombinatsiyalar
+            </div>
+
+            <div class="checkbox-group">
+                {{ form.generate_pairs }}
+                <label for="id_generate_pairs">{{ form.generate_pairs.label }}</label>
+            </div>
+
+            <div id="pair_settings" style="margin-left: 32px;">
+                <div class="form-group">
+                    <label class="form-label" for="id_pair_discount_percent">
+                        {{ form.pair_discount_percent.label }}
+                    </label>
+                    {{ form.pair_discount_percent }}
+                    <span class="form-text">
+                        Ikki qism uchun chegirma foizi. Misol: 15% = har bir kombinatsiya uchun 15% chegirma
+                    </span>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="id_pair_max_reduction">
+                        {{ form.pair_max_reduction.label }}
+                    </label>
+                    {{ form.pair_max_reduction }}
+                    <div class="max-reduction-info">
+                        ⚠️ Bu MAKSIMAL AYRILADIGAN SUMMA.
+                        Misol: 100 = maksimal -$100 gacha ayiriladi (alohida hisob -$150 bo'lsa ham)
+                    </div>
+
+                    <div class="example-box">
+                        <div class="example-title">📝 Misol hisoblash:</div>
+                        <div class="example-content">
+                            Ekran (-$100) + Batareyka (-$50) = -$150<br>
+                            Chegirma foizi: 15% = $22.50 chegirma<br>
+                            Chegirma qo'llangandan keyin: -$150 + $22.50 = -$127.50<br>
+                            <strong>Agar maksimal ayriladigan summa -$100 bo'lsa:</strong><br>
+                            -$127.50 < -$100 → LIMIT QO'LLANILADI → Natija: -$100
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3-TALIK KOMBINATSIYALAR -->
+        <div class="form-section">
+            <div class="section-title">
+                <span class="icon">🔸</span>
+                3 talik kombinatsiyalar
+            </div>
+
+            <div class="checkbox-group">
+                {{ form.generate_triples }}
+                <label for="id_generate_triples">{{ form.generate_triples.label }}</label>
+            </div>
+
+            <div id="triple_settings" style="margin-left: 32px;">
+                <div class="form-group">
+                    <label class="form-label" for="id_triple_discount_percent">
+                        {{ form.triple_discount_percent.label }}
+                    </label>
+                    {{ form.triple_discount_percent }}
+                    <span class="form-text">
+                        Uch qism uchun chegirma foizi. 3 talik kombinatsiyalar ko'proq chegirma oladi
+                    </span>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="id_triple_max_reduction">
+                        {{ form.triple_max_reduction.label }}
+                    </label>
+                    {{ form.triple_max_reduction }}
+                    <div class="max-reduction-info">
+                        ⚠️ 3 talik kombinatsiyalar uchun maksimal ayriladigan summa.
+                        Misol: 150 = maksimal -$150 gacha ayiriladi
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- QO'SHIMCHA SOZLAMALAR -->
+        <div class="form-section">
+            <div class="section-title">
+                <span class="icon">⚙️</span>
+                Qo'shimcha sozlamalar
+            </div>
+
+            <div class="checkbox-group">
+                {{ form.round_to_5_or_0 }}
+                <label for="id_round_to_5_or_0">{{ form.round_to_5_or_0.label }}</label>
+            </div>
+            <div style="margin-left: 32px; margin-bottom: 15px;">
+                <span class="form-text">
+                    Narxlarni 5 yoki 0 bilan tugaydigan butun songa yaxlitlash.
+                    Misol: $123 → $125, $148 → $150, $155 → $155
+                </span>
+            </div>
+
+            <div class="checkbox-group">
+                {{ form.skip_glass_screen }}
+                <label for="id_skip_glass_screen">{{ form.skip_glass_screen.label }}</label>
+            </div>
+
+            <div class="checkbox-group" style="background: #ffeaea;">
+                {{ form.overwrite_existing }}
+                <label for="id_overwrite_existing" style="color: #d32f2f;">
+                    {{ form.overwrite_existing.label }}
+                </label>
+            </div>
+            <div style="margin-left: 32px; margin-bottom: 15px;">
+                <span class="form-text" style="color: #d32f2f;">
+                    ⚠️ Diqqat! Bu mavjud barcha kombinatsiyalarni o'chirib, yangilarini yaratadi.
+                    Qayta tiklash imkoni yo'q!
+                </span>
+            </div>
+        </div>
+
+        <!-- YASHIRILGAN MAYDON -->
+        <div style="display: none;">
+            {{ form.model }}
+        </div>
+
+        <!-- TUGMALAR -->
+        <div class="button-group">
+            <button type="submit" class="btn-primary">
+                <span>🎯</span>
+                Kombinatsiyalarni yaratish
+            </button>
+            <a href="{% url 'admin:botapp_iphonemodel_change' model.pk %}" class="btn-secondary">
+                <span>←</span>
+                Orqaga qaytish
+            </a>
+        </div>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Checkbox toggles
+    const pairCheckbox = document.getElementById('id_generate_pairs');
+    const tripleCheckbox = document.getElementById('id_generate_triples');
+    const pairSettings = document.getElementById('pair_settings');
+    const tripleSettings = document.getElementById('triple_settings');
+
+    function updateVisibility() {
+        if (pairSettings) {
+            pairSettings.style.display = pairCheckbox.checked ? 'block' : 'none';
+        }
+        if (tripleSettings) {
+            tripleSettings.style.display = tripleCheckbox.checked ? 'block' : 'none';
+        }
+    }
+
+    if (pairCheckbox) {
+        pairCheckbox.addEventListener('change', updateVisibility);
+    }
+    if (tripleCheckbox) {
+        tripleCheckbox.addEventListener('change', updateVisibility);
+    }
+
+    // Initial visibility
+    updateVisibility();
+
+    // Form validation
+    const form = document.getElementById('autoCombinationForm');
+    form.addEventListener('submit', function(e) {
+        if (!pairCheckbox.checked && !tripleCheckbox.checked) {
+            e.preventDefault();
+            alert('⚠️ Iltimos, kamida bitta kombinatsiya turini tanlang!');
+            return false;
+        }
+
+        if (pairCheckbox.checked) {
+            const pairDiscount = document.getElementById('id_pair_discount_percent').value;
+            if (!pairDiscount || parseFloat(pairDiscount) < 0 || parseFloat(pairDiscount) > 100) {
+                e.preventDefault();
+                alert('⚠️ 2-talik uchun chegirma foizi 0-100 oralig\'ida bo\'lishi kerak!');
+                return false;
+            }
+        }
+
+        if (tripleCheckbox.checked) {
+            const tripleDiscount = document.getElementById('id_triple_discount_percent').value;
+            if (!tripleDiscount || parseFloat(tripleDiscount) < 0 || parseFloat(tripleDiscount) > 100) {
+                e.preventDefault();
+                alert('⚠️ 3-talik uchun chegirma foizi 0-100 oralig\'ida bo\'lishi kerak!');
+                return false;
+            }
+        }
+
+        if (pairCheckbox.checked || tripleCheckbox.checked) {
+            if (confirm('🎯 Kombinatsiyalar yaratilsinmi? Bu biroz vaqt olishi mumkin.')) {
+                return true;
+            } else {
+                e.preventDefault();
+                return false;
+            }
+        }
+    });
+
+    // Input formatting
+    const numberInputs = document.querySelectorAll('.form-control.number-input');
+    numberInputs.forEach(input => {
+        input.addEventListener('blur', function() {
+            if (this.value && !isNaN(this.value)) {
+                this.value = parseInt(this.value) || 0;
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

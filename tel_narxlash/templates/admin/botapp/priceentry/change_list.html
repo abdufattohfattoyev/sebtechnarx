@@ -1,0 +1,30 @@
+{% extends "admin/change_list.html" %}
+{% load i18n %}
+
+{% block object-tools-items %}
+  {{ block.super }}
+
+  {% if show_excel_export %}
+  <li>
+    <a href="{{ export_url }}" class="export-button" style="background:#4CAF50;color:white;padding:8px 16px;border-radius:4px;text-decoration:none;display:inline-block;">
+      📊 Excel Export
+    </a>
+  </li>
+  {% endif %}
+
+  {% if show_excel_import %}
+  <li>
+    <a href="{% url 'admin:botapp_priceentry_import' %}" class="import-button" style="background:#2196F3;color:white;padding:8px 16px;border-radius:4px;text-decoration:none;display:inline-block;">
+      📥 Excel Import
+    </a>
+  </li>
+  {% endif %}
+
+  {% if show_bulk_generate %}
+  <li>
+    <a href="{% url 'admin:botapp_priceentry_bulk_generate' %}" class="addlink" style="background:#9C27B0;color:white;padding:8px 16px;border-radius:4px;text-decoration:none;display:inline-block;">
+      ⚡ Avtomatik yaratish
+    </a>
+  </li>
+  {% endif %}
+{% endblock %}

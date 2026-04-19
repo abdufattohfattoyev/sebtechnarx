@@ -1,0 +1,822 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    .content-wrapper {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+
+    .page-header {
+        background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 12px;
+        margin-bottom: 30px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    .page-header h1 {
+        margin: 0 0 10px 0;
+        font-size: 28px;
+        font-weight: 600;
+    }
+
+    .page-header .description {
+        opacity: 0.9;
+        font-size: 15px;
+        line-height: 1.5;
+    }
+
+    .parts-section {
+        background: white;
+        border-radius: 12px;
+        padding: 25px;
+        margin-bottom: 25px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        border: 1px solid #e0e0e0;
+    }
+
+    .parts-section h2 {
+        margin: 0 0 20px 0;
+        color: #1976d2;
+        font-size: 20px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .parts-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 12px;
+    }
+
+    .part-card {
+        background: #f8f9fa;
+        border: 2px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 15px;
+        text-align: center;
+        transition: all 0.3s ease;
+    }
+
+    .part-card:hover {
+        border-color: #1976d2;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+
+    .part-name {
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 8px;
+        font-size: 14px;
+    }
+
+    .part-price {
+        font-size: 16px;
+        font-weight: 700;
+        color: #e53935;
+    }
+
+    .stats-section {
+        background: white;
+        border-radius: 12px;
+        padding: 25px;
+        margin-bottom: 25px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        border: 1px solid #e0e0e0;
+    }
+
+    .stats-section h2 {
+        margin: 0 0 20px 0;
+        color: #1976d2;
+        font-size: 20px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+    }
+
+    .stat-card {
+        background: white;
+        border: 2px solid #e0e0e0;
+        border-radius: 10px;
+        padding: 20px;
+        text-align: center;
+        transition: all 0.3s ease;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.1);
+    }
+
+    .stat-card.warning {
+        border-color: #ff9800;
+    }
+
+    .stat-label {
+        font-size: 14px;
+        color: #666;
+        margin-bottom: 8px;
+        font-weight: 500;
+    }
+
+    .stat-value {
+        font-size: 32px;
+        font-weight: 700;
+        color: #1976d2;
+        margin: 10px 0;
+    }
+
+    .stat-card.warning .stat-value {
+        color: #ff9800;
+    }
+
+    .form-section {
+        background: white;
+        border-radius: 12px;
+        padding: 30px;
+        margin-bottom: 25px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        border: 1px solid #e0e0e0;
+    }
+
+    .form-section h2 {
+        margin: 0 0 25px 0;
+        color: #1976d2;
+        font-size: 22px;
+        font-weight: 600;
+        padding-bottom: 15px;
+        border-bottom: 2px solid #f0f0f0;
+    }
+
+    .section-group {
+        margin-bottom: 30px;
+    }
+
+    .section-group h3 {
+        margin: 0 0 15px 0;
+        color: #333;
+        font-size: 18px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .form-group {
+        margin-bottom: 20px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #e0e0e0;
+    }
+
+    .form-group.limit-group {
+        background: #ffebee;
+        border-color: #ffcdd2;
+    }
+
+    .form-label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 8px;
+        color: #333;
+        font-size: 15px;
+    }
+
+    .form-label.required::after {
+        content: " *";
+        color: #e53935;
+    }
+
+    .form-control {
+        width: 100%;
+        max-width: 300px;
+        padding: 12px 15px;
+        border: 2px solid #ddd;
+        border-radius: 8px;
+        font-size: 15px;
+        transition: all 0.3s ease;
+        background: white;
+    }
+
+    .form-control:focus {
+        outline: none;
+        border-color: #1976d2;
+        box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+    }
+
+    .form-control.limit-input {
+        border-color: #e53935;
+        background: #fff5f5;
+    }
+
+    .form-control.limit-input:focus {
+        border-color: #e53935;
+        box-shadow: 0 0 0 3px rgba(229, 57, 53, 0.1);
+    }
+
+    .help-text {
+        display: block;
+        margin-top: 6px;
+        color: #666;
+        font-size: 13px;
+        line-height: 1.4;
+    }
+
+    .help-text strong {
+        color: #1976d2;
+    }
+
+    .checkbox-group {
+        display: flex;
+        align-items: center;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #e0e0e0;
+        margin-bottom: 15px;
+        transition: all 0.3s ease;
+    }
+
+    .checkbox-group:hover {
+        background: #f0f2f5;
+        border-color: #1976d2;
+    }
+
+    .checkbox-group.warning {
+        background: #fff3e0;
+        border-color: #ff9800;
+    }
+
+    .checkbox-group input[type="checkbox"] {
+        width: 20px;
+        height: 20px;
+        margin-right: 12px;
+        cursor: pointer;
+        accent-color: #4CAF50;
+    }
+
+    .checkbox-group.warning input[type="checkbox"] {
+        accent-color: #ff9800;
+    }
+
+    .checkbox-group label {
+        margin: 0;
+        cursor: pointer;
+        font-weight: 500;
+        color: #333;
+        flex-grow: 1;
+    }
+
+    .checkbox-group.warning label {
+        color: #e65100;
+    }
+
+    .rounding-info {
+        background: #e8f5e9;
+        border: 1px solid #c8e6c9;
+        border-radius: 6px;
+        padding: 15px;
+        margin: 15px 0;
+        font-size: 14px;
+        line-height: 1.5;
+    }
+
+    .examples-section {
+        background: #f9f9f9;
+        border-radius: 12px;
+        padding: 25px;
+        margin-bottom: 25px;
+        border: 1px solid #e0e0e0;
+    }
+
+    .examples-section h2 {
+        margin: 0 0 20px 0;
+        color: #1976d2;
+        font-size: 20px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .examples-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 15px;
+    }
+
+    .example-card {
+        background: white;
+        border: 2px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 20px;
+    }
+
+    .example-card h4 {
+        margin: 0 0 15px 0;
+        color: #2c3e50;
+        font-size: 16px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .example-content {
+        color: #555;
+        font-size: 14px;
+        line-height: 1.6;
+    }
+
+    .example-content strong {
+        color: #1976d2;
+    }
+
+    .example-content .result {
+        color: #e53935;
+        font-weight: 600;
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px dashed #ddd;
+    }
+
+    .submit-section {
+        background: white;
+        border-radius: 12px;
+        padding: 30px;
+        text-align: center;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        border: 1px solid #e0e0e0;
+    }
+
+    .button-group {
+        display: flex;
+        gap: 15px;
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+
+    .btn-primary {
+        background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);
+        color: white;
+        padding: 16px 40px;
+        border: none;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        text-decoration: none;
+    }
+
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+    }
+
+    .btn-secondary {
+        background: #f8f9fa;
+        color: #333;
+        padding: 16px 30px;
+        border: 2px solid #ddd;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .btn-secondary:hover {
+        background: #e9ecef;
+        border-color: #ccc;
+        transform: translateY(-2px);
+    }
+
+    .warning-box {
+        background: linear-gradient(135deg, #fff3e0 0%, #ffecb3 100%);
+        border: 2px solid #ff9800;
+        border-radius: 8px;
+        padding: 20px;
+        margin: 25px 0;
+    }
+
+    .warning-box strong {
+        color: #e65100;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 10px;
+    }
+
+    .warning-box-content {
+        color: #e65100;
+        font-size: 14px;
+        line-height: 1.5;
+    }
+
+    .hidden {
+        display: none !important;
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">🏠 Bosh sahifa</a>
+    &rsaquo; <a href="{% url 'admin:botapp_iphonemodel_changelist' %}">📱 iPhone Modellari</a>
+    &rsaquo; <a href="{% url 'admin:botapp_iphonemodel_change' model.pk %}">{{ model.name }}</a>
+    &rsaquo; 🎯 Avtomatik kombinatsiyalar
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="content-wrapper">
+    <!-- HEADER -->
+    <div class="page-header">
+        <h1>{{ model.name }} - Avtomatik kombinatsiyalar yaratish</h1>
+        <div class="description">
+            Tizim barcha mumkin bo'lgan qism kombinatsiyalarini avtomatik hisoblab yaratadi.
+            Faqat chegirma foizi va limitlarni belgilang.
+        </div>
+    </div>
+
+    <!-- MAVJUD QISMLAR -->
+    <div class="parts-section">
+        <h2>📦 Mavjud qismlar ({{ parts_count }} ta)</h2>
+        {% if parts %}
+        <div class="parts-grid">
+            {% for part in parts %}
+            <div class="part-card">
+                <div class="part-name">{{ part.get_part_type_display }}</div>
+                <div class="part-price">-${{ part.price_reduction|floatformat:2 }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div style="text-align: center; padding: 30px; color: #666; background: #f9f9f9; border-radius: 8px;">
+            ❌ Bu model uchun hech qanday qism mavjud emas. Avval qismlarni qo'shing.
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- MISOLLAR -->
+    <div class="examples-section">
+        <h2>💡 Misollar</h2>
+        <div class="examples-grid">
+            <div class="example-card">
+                <h4>💰 5/0 ga yaxlitlash</h4>
+                <div class="example-content">
+                    • 123 → 125 (3 bilan tugaydi, 5 ga)<br>
+                    • 126 → 125 (6 bilan tugaydi, 5 ga)<br>
+                    • 127 → 125 (7 bilan tugaydi, 5 ga)<br>
+                    • 128 → 130 (8 bilan tugaydi, 0 ga)<br>
+                    • 131 → 130 (1 bilan tugaydi, 0 ga)<br>
+                    • 134 → 135 (4 bilan tugaydi, 5 ga)<br>
+                    • 136 → 135 (6 bilan tugaydi, 5 ga)<br>
+                    • 139 → 140 (9 bilan tugaydi, 0 ga)<br>
+                    • 140 → 140 (0 bilan tugaydi, o'zgarmas)<br>
+                    • 145 → 145 (5 bilan tugaydi, o'zgarmas)
+                </div>
+            </div>
+
+            <div class="example-card">
+                <h4>🔴 Limit misoli - 2 talik</h4>
+                <div class="example-content">
+                    <strong>Parametrlar:</strong><br>
+                    • Qismlar: -$80 + -$60 = -$140<br>
+                    • Chegirma foizi: 15%<br>
+                    • Max ayriladigan summa: -$100<br><br>
+
+                    <strong>Hisoblash:</strong><br>
+                    1. Chegirma miqdori: $140 × 15% = $21<br>
+                    2. Chegirma qo'llangan: -$140 + $21 = -$119<br>
+                    3. Limit tekshirish: -$119 < -$100? ✅ HA<br>
+                    4. Limit qo'llaniladi<br><br>
+
+                    <div class="result">✅ Yakuniy narx: -$100</div>
+                </div>
+            </div>
+
+            <div class="example-card">
+                <h4>🔴 Limit misoli - 3 talik</h4>
+                <div class="example-content">
+                    <strong>Parametrlar:</strong><br>
+                    • Qismlar: -$70 + -$40 + -$50 = -$160<br>
+                    • Chegirma foizi: 20%<br>
+                    • Max ayriladigan summa: -$120<br><br>
+
+                    <strong>Hisoblash:</strong><br>
+                    1. Chegirma miqdori: $160 × 20% = $32<br>
+                    2. Chegirma qo'llangan: -$160 + $32 = -$128<br>
+                    3. Limit tekshirish: -$128 < -$120? ✅ HA<br>
+                    4. Limit qo'llaniladi<br><br>
+
+                    <div class="result">✅ Yakuniy narx: -$120</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- FORMA -->
+    <form method="post" id="autoCombinationForm">
+        {% csrf_token %}
+        <input type="hidden" name="model" value="{{ model.pk }}">
+
+        <div class="form-section">
+            <h2>⚙️ Sozlamalar</h2>
+
+            <!-- 2-TALIK KOMBINATSIYALAR -->
+            <div class="section-group">
+                <h3>🔹 2 talik kombinatsiyalar</h3>
+
+                <div class="checkbox-group">
+                    {{ form.generate_pairs }}
+                    <label for="id_generate_pairs">{{ form.generate_pairs.label }}</label>
+                </div>
+
+                <div id="pair_settings" class="hidden">
+                    <div class="form-group">
+                        <label class="form-label required" for="id_pair_discount_percent">
+                            {{ form.pair_discount_percent.label }}
+                        </label>
+                        {{ form.pair_discount_percent }}
+                        <span class="help-text">
+                            0-100 oralig'ida butun son. Misol: 15 = 15% chegirma
+                        </span>
+                    </div>
+
+                    <div class="form-group limit-group">
+                        <label class="form-label" for="id_pair_max_reduction">
+                            {{ form.pair_max_reduction.label }}
+                        </label>
+                        {{ form.pair_max_reduction }}
+                        <span class="help-text">
+                            <strong>⚠️ DIQQAT:</strong> Bu MAKSIMAL AYRILADIGAN SUMMA<br>
+                            • 0 = chegirma cheksiz<br>
+                            • 100 = maksimal -$100 gacha ayiriladi<br>
+                            • -$150 bo'lsa ham, -$100 ga tushiriladi
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3-TALIK KOMBINATSIYALAR -->
+            <div class="section-group">
+                <h3>🔸 3 talik kombinatsiyalar</h3>
+
+                <div class="checkbox-group">
+                    {{ form.generate_triples }}
+                    <label for="id_generate_triples">{{ form.generate_triples.label }}</label>
+                </div>
+
+                <div id="triple_settings" class="hidden">
+                    <div class="form-group">
+                        <label class="form-label required" for="id_triple_discount_percent">
+                            {{ form.triple_discount_percent.label }}
+                        </label>
+                        {{ form.triple_discount_percent }}
+                        <span class="help-text">
+                            0-100 oralig'ida butun son. Misol: 20 = 20% chegirma
+                        </span>
+                    </div>
+
+                    <div class="form-group limit-group">
+                        <label class="form-label" for="id_triple_max_reduction">
+                            {{ form.triple_max_reduction.label }}
+                        </label>
+                        {{ form.triple_max_reduction }}
+                        <span class="help-text">
+                            <strong>⚠️ DIQQAT:</strong> Bu MAKSIMAL AYRILADIGAN SUMMA<br>
+                            • 0 = chegirma cheksiz<br>
+                            • 150 = maksimal -$150 gacha ayiriladi<br>
+                            • -$200 bo'lsa ham, -$150 ga tushiriladi
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- YAXLITLASH -->
+            <div class="section-group">
+                <h3>💰 Yaxlitlash</h3>
+
+                <div class="checkbox-group">
+                    {{ form.round_to_5_or_0 }}
+                    <label for="id_round_to_5_or_0">{{ form.round_to_5_or_0.label }}</label>
+                </div>
+
+                <div class="rounding-info">
+                    ✅ Narxlar avtomatik ravishda 5 yoki 0 bilan tugaydigan butun songa yaxlitlanadi.<br>
+                    Bu mijozlar uchun tushunarliroq narxlarni ta'minlaydi.
+                </div>
+            </div>
+
+            <!-- XAVFSIZLIK -->
+            <div class="section-group">
+                <h3>🛡️ Xavfsizlik</h3>
+
+                <div class="checkbox-group">
+                    {{ form.skip_glass_screen }}
+                    <label for="id_skip_glass_screen">{{ form.skip_glass_screen.label }}</label>
+                </div>
+
+                <div class="checkbox-group warning">
+                    {{ form.overwrite_existing }}
+                    <label for="id_overwrite_existing">{{ form.overwrite_existing.label }}</label>
+                </div>
+            </div>
+        </div>
+
+        <!-- STATISTIKA -->
+        {% if parts_count >= 2 %}
+        <div class="stats-section">
+            <h2>📊 Statistika</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">2 talik kombinatsiyalar</div>
+                    <div class="stat-value">{{ pair_count }}</div>
+                    <div style="font-size: 13px; color: #666;">{{ parts_count }} ta qismdan</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-label">3 talik kombinatsiyalar</div>
+                    <div class="stat-value">{{ triple_count }}</div>
+                    <div style="font-size: 13px; color: #666;">{{ parts_count }} ta qismdan</div>
+                </div>
+
+                {% if glass_screen_combos > 0 %}
+                <div class="stat-card warning">
+                    <div class="stat-label">Oyna+Ekran kombinatsiyalar</div>
+                    <div class="stat-value">{{ glass_screen_combos }}</div>
+                    <div style="font-size: 13px; color: #666;">Avtomatik o'tkaziladi</div>
+                </div>
+                {% endif %}
+            </div>
+
+            {% if glass_screen_combos > 0 %}
+            <div class="warning-box">
+                <strong>⚠️ Eslatma</strong>
+                <div class="warning-box-content">
+                    Oyna va Ekran birgalikda bo'lishi mumkin emas. Tizim avtomatik ravishda
+                    <strong>{{ glass_screen_combos }} ta</strong> noto'g'ri kombinatsiyani o'tkazib yuboradi.
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% else %}
+        <div class="warning-box">
+            <strong>⚠️ Diqqat</strong>
+            <div class="warning-box-content">
+                Kombinatsiyalar yaratish uchun kamida 2 ta qism kerak. Hozircha {{ parts_count }} ta qism mavjud.
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- TUGMALAR -->
+        <div class="submit-section">
+            <div class="button-group">
+                <button type="submit" class="btn-primary">
+                    🎯 Kombinatsiyalarni yaratish
+                </button>
+                <a href="{% url 'admin:botapp_iphonemodel_change' model.pk %}" class="btn-secondary">
+                    ← Orqaga qaytish
+                </a>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Elementlarni tanlash
+    const pairCheckbox = document.getElementById('id_generate_pairs');
+    const tripleCheckbox = document.getElementById('id_generate_triples');
+    const pairSettings = document.getElementById('pair_settings');
+    const tripleSettings = document.getElementById('triple_settings');
+
+    const pairDiscountInput = document.getElementById('id_pair_discount_percent');
+    const pairMaxInput = document.getElementById('id_pair_max_reduction');
+    const tripleDiscountInput = document.getElementById('id_triple_discount_percent');
+    const tripleMaxInput = document.getElementById('id_triple_max_reduction');
+
+    // Limit inputlariga xususiy stil
+    if (pairMaxInput) {
+        pairMaxInput.classList.add('limit-input');
+        pairMaxInput.placeholder = "Misol: 100";
+    }
+
+    if (tripleMaxInput) {
+        tripleMaxInput.classList.add('limit-input');
+        tripleMaxInput.placeholder = "Misol: 150";
+    }
+
+    // Checkbox bosilganda sozlamalarni ko'rsatish
+    function updateVisibility() {
+        if (pairSettings) {
+            pairSettings.classList.toggle('hidden', !pairCheckbox.checked);
+        }
+        if (tripleSettings) {
+            tripleSettings.classList.toggle('hidden', !tripleCheckbox.checked);
+        }
+    }
+
+    if (pairCheckbox) {
+        pairCheckbox.addEventListener('change', updateVisibility);
+    }
+    if (tripleCheckbox) {
+        tripleCheckbox.addEventListener('change', updateVisibility);
+    }
+
+    // Boshlang'ich holat
+    updateVisibility();
+
+    // Forma validatsiyasi
+    const form = document.getElementById('autoCombinationForm');
+    form.addEventListener('submit', function(e) {
+        let isValid = true;
+        let errorMessage = '';
+
+        // Hech bo'lmaganda bitta kombinatsiya turi tanlanganligini tekshirish
+        if (!pairCheckbox.checked && !tripleCheckbox.checked) {
+            isValid = false;
+            errorMessage = '⚠️ Iltimos, kamida bitta kombinatsiya turini tanlang!';
+        }
+
+        // 2-talik sozlamalarini tekshirish
+        if (pairCheckbox.checked && pairDiscountInput) {
+            const discount = parseInt(pairDiscountInput.value);
+            if (isNaN(discount) || discount < 0 || discount > 100) {
+                isValid = false;
+                errorMessage = '⚠️ 2-talik uchun chegirma foizi 0-100 oralig\'ida bo\'lishi kerak!';
+            }
+        }
+
+        // 3-talik sozlamalarini tekshirish
+        if (tripleCheckbox.checked && tripleDiscountInput) {
+            const discount = parseInt(tripleDiscountInput.value);
+            if (isNaN(discount) || discount < 0 || discount > 100) {
+                isValid = false;
+                errorMessage = '⚠️ 3-talik uchun chegirma foizi 0-100 oralig\'ida bo\'lishi kerak!';
+            }
+        }
+
+        // Agar validatsiya o'tmasa
+        if (!isValid) {
+            e.preventDefault();
+            alert(errorMessage);
+            return false;
+        }
+
+        // Tasdiq so'rovi
+        const confirmMessage = '🎯 Kombinatsiyalar yaratilsinmi?\n\n' +
+            'Bu jarayon bir necha soniya davom etishi mumkin.';
+
+        if (!confirm(confirmMessage)) {
+            e.preventDefault();
+            return false;
+        }
+
+        return true;
+    });
+
+    // Inputlarni tozalash
+    const numberInputs = [
+        pairDiscountInput, pairMaxInput,
+        tripleDiscountInput, tripleMaxInput
+    ];
+
+    numberInputs.forEach(input => {
+        if (input) {
+            input.addEventListener('blur', function() {
+                if (this.value && !isNaN(this.value)) {
+                    const value = parseInt(this.value);
+                    this.value = Math.max(0, value);
+                }
+            });
+        }
+    });
+});
+</script>
+{% endblock %}

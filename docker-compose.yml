@@ -7,18 +7,19 @@ services:
     container_name: sebtech_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_NAME}
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${PHONE_DB_NAME}
+      POSTGRES_USER: ${PHONE_DB_USER}
+      POSTGRES_PASSWORD: ${PHONE_DB_PASSWORD}
       POSTGRES_INITDB_ARGS: "--encoding=UTF8"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backups:/backups
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     # ports YO'Q - tashqaridan kirish mumkin emas!
     networks:
       - bot_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      test: ["CMD-SHELL", "pg_isready -U ${PHONE_DB_USER} -d ${PHONE_DB_NAME}"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -35,6 +36,10 @@ services:
     environment:
       DB_HOST: db
       DB_PORT: 5432
+      USER_DB_HOST: db
+      PHONE_DB_HOST: db
+    ports:
+      - "127.0.0.1:3002:3002"
     volumes:
       - ./data:/app/storage
       - ./temp:/app/temp

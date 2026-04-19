@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Narxlar Ro'yxati{% endblock %}
+{% block nav_list %}active{% endblock %}
+
+{% block extra_style %}
+.filter-card { background: white; border-radius: 12px; padding: 1.25rem;
+               box-shadow: 0 2px 12px rgba(0,0,0,.07); margin-bottom: 1.5rem; }
+.price-row { border-left: 4px solid transparent; transition: all 0.15s; }
+.price-row:hover { border-left-color: #1a1a2e; background: #f8f9ff; }
+.price-row.clean { border-left-color: #28a745; }
+.price-row.parts { border-left-color: #fd7e14; }
+.price-tag { font-size: 1.15rem; font-weight: 700; color: #1a1a2e; }
+.part-badge { font-size: 0.72rem; }
+{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col">
+        <h2 class="fw-bold mb-1"><i class="bi bi-list-ul me-2"></i>Narxlar Ro'yxati</h2>
+        <p class="text-muted">Jami {{ price_data|length }} ta yozuv</p>
+    </div>
+</div>
+
+<!-- Filter -->
+<div class="filter-card">
+    <form method="get" class="row g-3 align-items-end">
+        <div class="col-sm-6 col-md-3">
+            <label class="form-label small fw-semibold">Model</label>
+            <select name="model" class="form-select form-select-sm">
+                <option value="">Barcha modellар</option>
+                {% for m in models %}
+                <option value="{{ m.id }}" {% if selected_model == m.id|stringformat:"s" %}selected{% endif %}>
+                    {{ m.name }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-sm-6 col-md-2">
+            <label class="form-label small fw-semibold">Min narx ($)</label>
+            <input type="number" name="min_price" class="form-control form-control-sm"
+                   value="{{ min_price }}" placeholder="0">
+        </div>
+        <div class="col-sm-6 col-md-2">
+            <label class="form-label small fw-semibold">Max narx ($)</label>
+            <input type="number" name="max_price" class="form-control form-control-sm"
+                   value="{{ max_price }}" placeholder="9999">
+        </div>
+        <div class="col-sm-6 col-md-2">
+            <label class="form-label small fw-semibold">Quti</label>
+            <select name="has_box" class="form-select form-select-sm">
+                <option value="">Barchasi</option>
+                <option value="yes" {% if has_box == 'yes' %}selected{% endif %}>Quti bor</option>
+                <option value="no" {% if has_box == 'no' %}selected{% endif %}>Quti yo'q</option>
+            </select>
+        </div>
+        <div class="col-sm-6 col-md-3 d-flex gap-2">
+            <button type="submit" class="btn btn-primary btn-sm flex-fill">
+                <i class="bi bi-search me-1"></i>Filter
+            </button>
+            <a href="/narxlar/" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-x"></i>
+            </a>
+        </div>
+    </form>
+</div>
+
+{% if price_data %}
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-dark">
+                <tr>
+                    <th>Model</th>
+                    <th>Xotira</th>
+                    <th>Rang</th>
+                    <th>Batareya</th>
+                    <th>Quti</th>
+                    <th>SIM</th>
+                    <th>Qismlar</th>
+                    <th class="text-end">Narx</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in price_data %}
+                <tr class="price-row {% if item.entry.replaced_parts.exists or item.entry.combination %}parts{% else %}clean{% endif %}">
+                    <td>
+                        <a href="/model/{{ item.entry.model.id }}/" class="fw-semibold text-decoration-none text-dark">
+                            {{ item.entry.model.name }}
+                        </a>
+                    </td>
+                    <td>{{ item.entry.storage.size }}</td>
+                    <td>
+                        {% if item.entry.color %}
+                            {{ item.entry.color.name }}
+                        {% else %}
+                            <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="badge bg-light text-dark border">
+                            {{ item.entry.battery.label }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if item.entry.has_box %}
+                            <i class="bi bi-box-seam text-success"></i>
+                        {% else %}
+                            <i class="bi bi-x-circle text-danger"></i>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="badge bg-secondary">{{ item.entry.sim_type }}</span>
+                    </td>
+                    <td>
+                        {% if item.entry.combination %}
+                            <span class="badge bg-warning text-dark part-badge">
+                                🎯 {{ item.entry.combination.name }}
+                            </span>
+                        {% elif item.entry.replaced_parts.exists %}
+                            {% for part in item.entry.replaced_parts.all %}
+                            <span class="badge bg-orange text-white part-badge" style="background:#fd7e14;">
+                                {{ part.get_part_type_display }}
+                            </span>
+                            {% endfor %}
+                        {% else %}
+                            <span class="text-success small">✓ Yangi</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        <span class="price-tag">${{ item.price|floatformat:0 }}</span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="text-center py-5">
+    <i class="bi bi-inbox fs-1 text-muted"></i>
+    <p class="text-muted mt-3">Narxlar topilmadi. Filterni o'zgartiring.</p>
+    <a href="/narxlar/" class="btn btn-outline-primary">Barcha narxlar</a>
+</div>
+{% endif %}
+{% endblock %}

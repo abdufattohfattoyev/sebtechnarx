@@ -9,11 +9,18 @@ BOT_TOKEN = env.str("BOT_TOKEN")
 ADMINS = env.list("ADMINS", subcast=int)
 IP = env.str("IP", "localhost")
 
-# Django API
-API_BASE_URL = env.str("API_BASE_URL", "https://sebmarket.uz/api/payments")
+# Webhook (production uchun)
+USE_WEBHOOK     = env.bool("USE_WEBHOOK", False)
+WEBHOOK_HOST    = env.str("WEBHOOK_HOST", "https://seb-tech.uz")
+WEBHOOK_PATH    = env.str("WEBHOOK_PATH", "/bot/webhook/")
+WEBHOOK_URL     = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
+WEBAPP_HOST     = env.str("WEBAPP_HOST", "0.0.0.0")
+WEBAPP_PORT     = env.int("WEBAPP_PORT", 3001)
 
-# Database
-DB_PATH = env.str("DB_PATH", "data/phones.db")
+# Django API
+API_BASE_URL  = env.str("API_BASE_URL",   "https://sebmarket.uz/api/payments")
+DJANGO_BASE_URL = env.str("DJANGO_BASE_URL", "http://127.0.0.1:8000")
+BOT_API_PORT    = env.int("BOT_API_PORT",    3002)
 
 # Bepul urinishlar soni (yangi foydalanuvchilarga)
 FREE_TRIALS_DEFAULT = 3

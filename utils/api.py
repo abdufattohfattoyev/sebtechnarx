@@ -1,4 +1,5 @@
 # utils/api.py - TO'LIQ TUZATILGAN VERSIYA
+import os
 import aiohttp
 import asyncio
 import logging
@@ -9,6 +10,10 @@ logger = logging.getLogger(__name__)
 
 # API base URL
 API_BASE_URL = "https://sebmarket.uz/api/payments"
+
+# Django asosiy sayt URL (mijoz xaridlari uchun)
+DJANGO_BASE_URL = os.getenv('DJANGO_BASE_URL', 'http://127.0.0.1:8000')
+BOT_SECRET_TOKEN = os.getenv('BOT_TOKEN', '')
 
 
 class PaymentAPI:
@@ -362,6 +367,31 @@ class PaymentAPI:
         else:
             logger.error(f"❌ Phone update failed: {result.get('error')}")
             return result
+
+    async def get_customer_purchases(self, phone: str) -> Dict[str, Any]:
+        """
+        Mijozning xaridlari tarixini olish
+        GET https://seb-tech.uz/shops/api/customer/purchases/?phone=...
+        """
+        session = await self._ensure_session()
+        url = f"{DJANGO_BASE_URL}/shops/api/customer/purchases/"
+        headers = {
+            'X-Bot-Token': BOT_SECRET_TOKEN,
+            'Accept': 'application/json',
+        }
+        logger.info(f"get_customer_purchases: url={url}, phone={phone}")
+        try:
+            async with session.get(url, params={'phone': phone}, headers=headers, timeout=self.timeout) as resp:
+                text = await resp.text()
+                logger.info(f"get_customer_purchases response: status={resp.status}, body={text[:300]}")
+                try:
+                    result = __import__('json').loads(text)
+                except Exception:
+                    return {'success': False, 'error': f'Javob noto\'g\'ri: {text[:100]}'}
+                return result
+        except Exception as e:
+            logger.error(f"get_customer_purchases error: {type(e).__name__}: {e}")
+            return {'success': False, 'error': str(e)}
 
     async def test_connection(self) -> bool:
         """API ga ulanishni test qilish"""

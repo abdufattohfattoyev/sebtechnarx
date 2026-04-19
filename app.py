@@ -6,7 +6,7 @@ from aiogram.utils.exceptions import TelegramAPIError, NetworkError
 
 from loader import dp, bot
 import middlewares, filters, handlers
-from data.config import ADMINS
+from data.config import ADMINS, USE_WEBHOOK, WEBHOOK_URL, WEBHOOK_PATH, WEBAPP_HOST, WEBAPP_PORT
 
 # ============================================
 # LOGGING KONFIGURATSIYASI
@@ -25,6 +25,16 @@ logger = logging.getLogger(__name__)
 
 async def on_startup(dispatcher):
     """Bot ishga tushganda"""
+    # ── Bot API HTTP server (Django uchun) ──────────────────
+    try:
+        from data.config import BOT_API_PORT
+        from utils.bot_api import start_bot_api
+        start_bot_api(BOT_API_PORT)
+    except Exception as e:
+        logger.warning(f"⚠️ Bot API server ishga tushmadi: {e}")
+    if USE_WEBHOOK:
+        await bot.set_webhook(WEBHOOK_URL)
+        logger.info(f"✅ Webhook o'rnatildi: {WEBHOOK_URL}")
 
     logger.info("=" * 60)
     logger.info("🚀 BOT ISHGA TUSHMOQDA...")
@@ -172,19 +182,30 @@ async def on_shutdown(dispatcher):
 
 
 def main():
-    """Bot ishga tushirish"""
+    """Bot ishga tushirish — webhook yoki polling"""
     try:
-        logger.info("🚀 Executor ishga tushmoqda...")
-
-        executor.start_polling(
-            dp,
-            on_startup=on_startup,
-            on_shutdown=on_shutdown,
-            skip_updates=True,  # Eski xabarlarni o'tkazib yuborish
-            timeout=60,  # Polling timeout
-            relax=0.1,  # Requestlar orasida pauza
-            fast=False  # Fast mode o'chirish (barqarorlik uchun)
-        )
+        if USE_WEBHOOK:
+            logger.info(f"🚀 Webhook rejimida ishga tushmoqda: {WEBHOOK_URL}")
+            executor.start_webhook(
+                dispatcher=dp,
+                webhook_path=WEBHOOK_PATH,
+                on_startup=on_startup,
+                on_shutdown=on_shutdown,
+                skip_updates=True,
+                host=WEBAPP_HOST,
+                port=WEBAPP_PORT,
+            )
+        else:
+            logger.info("🚀 Polling rejimida ishga tushmoqda...")
+            executor.start_polling(
+                dp,
+                on_startup=on_startup,
+                on_shutdown=on_shutdown,
+                skip_updates=True,
+                timeout=60,
+                relax=0.1,
+                fast=False,
+            )
 
     except (KeyboardInterrupt, SystemExit):
         logger.info("✋ Bot to'xtatildi (Ctrl+C)")

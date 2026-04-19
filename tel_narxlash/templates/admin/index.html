@@ -1,0 +1,150 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+.stat-card {
+    background: white;
+    border-radius: 10px;
+    padding: 1.25rem 1.5rem;
+    border-left: 5px solid #417690;
+    box-shadow: 0 2px 8px rgba(0,0,0,.08);
+    margin-bottom: 1rem;
+}
+.stat-card.green { border-left-color: #28a745; }
+.stat-card.orange { border-left-color: #fd7e14; }
+.stat-card.purple { border-left-color: #6f42c1; }
+.stat-card.red { border-left-color: #dc3545; }
+.stat-num { font-size: 2rem; font-weight: 700; color: #1a1a2e; line-height: 1; }
+.stat-label { color: #6c757d; font-size: 0.85rem; margin-top: 4px; }
+.quick-btn { display: inline-block; padding: 8px 16px; border-radius: 6px;
+             text-decoration: none; font-size: 0.85rem; margin: 4px; color: white; }
+.history-item { padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 0.85rem; }
+.history-item:last-child { border-bottom: none; }
+</style>
+{% endblock %}
+
+{% block content_title %}
+<h1>{% trans 'Dashboard' %}</h1>
+{% endblock %}
+
+{% block content %}
+{% load log %}
+
+<!-- Statistics -->
+<h2 style="font-size:1rem;text-transform:uppercase;color:#6c757d;letter-spacing:1px;margin-bottom:1rem;">
+    Statistika
+</h2>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:2rem;">
+
+    <div class="stat-card">
+        <div class="stat-num">{{ total_models }}</div>
+        <div class="stat-label">📱 Aktiv Modellар</div>
+    </div>
+
+    <div class="stat-card green">
+        <div class="stat-num">{{ total_prices }}</div>
+        <div class="stat-label">💰 Jami Narxlar</div>
+    </div>
+
+    <div class="stat-card orange">
+        <div class="stat-num">{{ total_storages }}</div>
+        <div class="stat-label">💾 Xotira variantlar</div>
+    </div>
+
+    <div class="stat-card purple">
+        <div class="stat-num">{{ total_colors }}</div>
+        <div class="stat-label">🎨 Ranglar</div>
+    </div>
+
+    <div class="stat-card red">
+        <div class="stat-num">{{ total_combinations }}</div>
+        <div class="stat-label">🎯 Kombinatsiyalar</div>
+    </div>
+
+</div>
+
+<!-- Quick actions -->
+<h2 style="font-size:1rem;text-transform:uppercase;color:#6c757d;letter-spacing:1px;margin-bottom:1rem;">
+    Tezkor havolalar
+</h2>
+<div style="margin-bottom:2rem;">
+    <a class="quick-btn" style="background:#417690;" href="/admin/botapp/iphonemodel/add/">
+        ➕ Yangi model
+    </a>
+    <a class="quick-btn" style="background:#28a745;" href="/admin/botapp/priceentry/add/">
+        ➕ Narx qo'shish
+    </a>
+    <a class="quick-btn" style="background:#fd7e14;" href="/admin/botapp/priceentry/">
+        📋 Barcha narxlar
+    </a>
+    <a class="quick-btn" style="background:#6f42c1;" href="/admin/botapp/priceentry/bulk-generate/">
+        ⚡ Avtomatik narxlar
+    </a>
+    <a class="quick-btn" style="background:#1a1a2e;" href="/" target="_blank">
+        🌐 Web saytni ko'rish
+    </a>
+    <a class="quick-btn" style="background:#0f3460;" href="/narxlar/" target="_blank">
+        📊 Narxlar ro'yxati
+    </a>
+</div>
+
+<!-- Recent changes -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:2rem;">
+
+    <div>
+        <h2 style="font-size:1rem;text-transform:uppercase;color:#6c757d;letter-spacing:1px;margin-bottom:1rem;">
+            So'nggi o'zgarishlar
+        </h2>
+        <div style="background:white;border-radius:10px;padding:1rem;box-shadow:0 2px 8px rgba(0,0,0,.08);">
+            {% get_admin_log 10 as admin_log for_user user %}
+            {% if admin_log %}
+                {% for entry in admin_log %}
+                <div class="history-item">
+                    <span style="color:#6c757d;">{{ entry.action_time|date:"d.m H:i" }}</span>
+                    {% if entry.is_addition %}
+                        <span style="color:#28a745;margin:0 4px;">➕</span>
+                    {% elif entry.is_change %}
+                        <span style="color:#fd7e14;margin:0 4px;">✏️</span>
+                    {% elif entry.is_deletion %}
+                        <span style="color:#dc3545;margin:0 4px;">🗑️</span>
+                    {% endif %}
+                    {% if entry.is_deletion %}
+                        {{ entry.object_repr }}
+                    {% else %}
+                        <a href="{{ entry.get_admin_url }}">{{ entry.object_repr }}</a>
+                    {% endif %}
+                    <small style="color:#6c757d;display:block;">{{ entry.content_type }}</small>
+                </div>
+                {% endfor %}
+            {% else %}
+                <p style="color:#6c757d;font-size:.85rem;">Hali o'zgarishlar yo'q</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- App list -->
+    <div>
+        <h2 style="font-size:1rem;text-transform:uppercase;color:#6c757d;letter-spacing:1px;margin-bottom:1rem;">
+            Bo'limlar
+        </h2>
+        {% for app in app_list %}
+        <div style="background:white;border-radius:10px;padding:1rem;box-shadow:0 2px 8px rgba(0,0,0,.08);margin-bottom:12px;">
+            <div style="font-weight:600;margin-bottom:8px;color:#1a1a2e;">{{ app.name }}</div>
+            {% for model in app.models %}
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #f5f5f5;">
+                <a href="{{ model.admin_url }}" style="font-size:.9rem;">{{ model.name }}</a>
+                <div style="display:flex;gap:6px;">
+                    {% if model.add_url %}
+                    <a href="{{ model.add_url }}" style="font-size:.75rem;color:#28a745;">➕</a>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+{% endblock %}

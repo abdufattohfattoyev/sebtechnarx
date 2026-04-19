@@ -1,0 +1,545 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    .content-wrapper {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 30px;
+    }
+
+    .page-header {
+        background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 12px;
+        margin-bottom: 30px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    .info-box {
+        background: #e3f2fd;
+        border-left: 4px solid #1976d2;
+        padding: 20px;
+        border-radius: 8px;
+        margin: 20px 0;
+    }
+
+    .parts-preview {
+        background: white;
+        border: 2px solid #e0e0e0;
+        border-radius: 12px;
+        padding: 25px;
+        margin: 25px 0;
+    }
+
+    .parts-preview h3 {
+        margin-top: 0;
+        color: #1976d2;
+        font-size: 20px;
+    }
+
+    .part-item {
+        display: inline-block;
+        background: linear-gradient(135deg, #f5f5f5 0%, #e8e8e8 100%);
+        padding: 12px 18px;
+        margin: 8px;
+        border-radius: 8px;
+        border: 2px solid #ddd;
+        font-size: 14px;
+        transition: all 0.3s;
+    }
+
+    .part-item:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    }
+
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 20px;
+        margin: 30px 0;
+    }
+
+    .stat-card {
+        background: white;
+        border: 2px solid #e0e0e0;
+        border-radius: 12px;
+        padding: 25px;
+        text-align: center;
+        transition: all 0.3s;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+        border-color: #1976d2;
+    }
+
+    .stat-label {
+        font-size: 14px;
+        color: #666;
+        margin-bottom: 10px;
+        font-weight: 500;
+    }
+
+    .stat-number {
+        font-size: 42px;
+        font-weight: bold;
+        color: #1976d2;
+        margin: 15px 0;
+    }
+
+    .form-section {
+        background: white;
+        border: 2px solid #e0e0e0;
+        border-radius: 12px;
+        padding: 30px;
+        margin: 25px 0;
+    }
+
+    .form-section h2 {
+        margin-top: 0;
+        color: #1976d2;
+        font-size: 22px;
+        border-bottom: 2px solid #e0e0e0;
+        padding-bottom: 15px;
+    }
+
+    .form-section h3 {
+        color: #333;
+        font-size: 18px;
+        margin-top: 25px;
+        margin-bottom: 15px;
+    }
+
+    .form-row {
+        margin: 20px 0;
+        padding: 18px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #e0e0e0;
+    }
+
+    .form-row label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 10px;
+        color: #333;
+        font-size: 15px;
+    }
+
+    .form-row input[type="number"] {
+        width: 100%;
+        max-width: 300px;
+        padding: 12px 16px;
+        border: 2px solid #ddd;
+        border-radius: 8px;
+        font-size: 16px;
+        transition: border-color 0.3s;
+    }
+
+    .limit-input {
+        border-color: #d32f2f !important;
+        background-color: #ffebee !important;
+    }
+
+    .form-row input[type="number"]:focus {
+        outline: none;
+        border-color: #1976d2;
+    }
+
+    .checkbox-row {
+        display: flex;
+        align-items: center;
+        padding: 15px;
+        background: white;
+        border-radius: 8px;
+        margin: 12px 0;
+        border: 2px solid #e0e0e0;
+        transition: all 0.3s;
+    }
+
+    .checkbox-row:hover {
+        border-color: #1976d2;
+        background: #f8f9fa;
+    }
+
+    .checkbox-row input[type="checkbox"] {
+        width: 22px;
+        height: 22px;
+        margin-right: 12px;
+        cursor: pointer;
+    }
+
+    .checkbox-row label {
+        margin: 0;
+        cursor: pointer;
+        font-size: 15px;
+        font-weight: 500;
+    }
+
+    .helptext {
+        display: block;
+        margin-top: 8px;
+        color: #666;
+        font-size: 13px;
+        line-height: 1.5;
+    }
+
+    .rounding-info {
+        background: #e8f5e9;
+        padding: 12px;
+        border-radius: 6px;
+        margin-top: 10px;
+        border: 1px solid #c8e6c9;
+        font-size: 14px;
+    }
+
+    .example-list {
+        margin: 10px 0;
+        padding-left: 20px;
+    }
+
+    .example-list li {
+        margin: 5px 0;
+    }
+
+    .submit-section {
+        background: white;
+        border: 2px solid #e0e0e0;
+        border-radius: 12px;
+        padding: 30px;
+        margin-top: 30px;
+        text-align: center;
+    }
+
+    .submit-button {
+        background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+        color: white;
+        padding: 16px 40px;
+        border: none;
+        border-radius: 8px;
+        font-size: 18px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+        box-shadow: 0 4px 6px rgba(76, 175, 80, 0.3);
+    }
+
+    .submit-button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(76, 175, 80, 0.4);
+    }
+
+    .cancel-button {
+        background: #757575;
+        color: white;
+        padding: 16px 40px;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 500;
+        text-decoration: none;
+        display: inline-block;
+        margin-left: 15px;
+        transition: all 0.3s;
+    }
+
+    .cancel-button:hover {
+        background: #616161;
+        transform: translateY(-2px);
+    }
+
+    .warning-box {
+        background: #fff3e0;
+        border-left: 4px solid #ff9800;
+        padding: 20px;
+        border-radius: 8px;
+        margin: 20px 0;
+    }
+
+    .examples-box {
+        background: #f5f5f5;
+        border: 2px solid #ddd;
+        border-radius: 8px;
+        padding: 20px;
+        margin: 20px 0;
+    }
+
+    .examples-box h4 {
+        color: #1976d2;
+        margin-top: 0;
+    }
+
+    .example-item {
+        background: white;
+        padding: 15px;
+        border-radius: 6px;
+        margin: 10px 0;
+        border-left: 4px solid #4CAF50;
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Bosh sahifa</a>
+    &rsaquo; <a href="{% url 'admin:botapp_iphonemodel_changelist' %}">iPhone Modellari</a>
+    &rsaquo; <a href="{% url 'admin:botapp_iphonemodel_change' model.pk %}">{{ model.name }}</a>
+    &rsaquo; Avtomatik kombinatsiyalar
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="content-wrapper">
+    <!-- PAGE HEADER -->
+    <div class="page-header">
+        <h1>🎯 {{ model.name }} uchun avtomatik kombinatsiyalar</h1>
+    </div>
+
+    <!-- INFO BOX -->
+    <div class="info-box">
+        <strong>ℹ️ Qanday ishlaydi:</strong> Tizim avtomatik ravishda barcha mumkin bo'lgan 2 va 3 talik qism kombinatsiyalarini yaratadi. Har bir kombinatsiya turi uchun alohida chegirma foizi va limit belgilashingiz mumkin!
+    </div>
+
+    <!-- MAVJUD QISMLAR -->
+    <div class="parts-preview">
+        <h3>📦 Mavjud qismlar ({{ parts_count }} ta):</h3>
+        {% for part in parts %}
+            <span class="part-item">
+                {{ part.get_part_type_display }}: <strong style="color: #d32f2f;">${{ part.price_reduction|floatformat:2 }}</strong>
+            </span>
+        {% empty %}
+            <p style="color: #ff9800;">⚠️ Hali qismlar qo'shilmagan!</p>
+        {% endfor %}
+    </div>
+
+    <!-- MISOLLAR -->
+    <div class="examples-box">
+        <h4>💡 Misollar:</h4>
+
+        <div class="example-item">
+            <strong>💰 5/0 ga yaxlitlash:</strong>
+            <ul class="example-list">
+                <li>127 → 125 (1-4 → 5 ga)</li>
+                <li>128 → 130 (6-9 → 0 ga)</li>
+                <li>131 → 130 (1-4 → 5 ga, lekin 131→135 emas!)</li>
+                <li>134 → 135 (1-4 → 5 ga)</li>
+                <li>136 → 135 (6-9 → 0 ga)</li>
+                <li>139 → 140 (6-9 → 0 ga)</li>
+            </ul>
+        </div>
+
+        <div class="example-item">
+            <strong>🔴 Limit misoli (2-talik):</strong><br>
+            • Qismlar: -$80 + -$60 = -$140<br>
+            • Chegirma 15%: -$140 × 0.85 = -$119<br>
+            • Limit -$100: -$140 - (-$100) = -$40<br>
+            • -$119 < -$40 → Limit qo'llaniladi!<br>
+            • <strong>Yakuniy narx: -$100</strong>
+        </div>
+
+        <div class="example-item">
+            <strong>🔴 Limit misoli (3-talik):</strong><br>
+            • Qismlar: -$70 + -$40 + -$50 = -$160<br>
+            • Chegirma 20%: -$160 × 0.8 = -$128<br>
+            • Limit -$100: -$160 - (-$100) = -$60<br>
+            • -$128 < -$60 → Limit qo'llaniladi!<br>
+            • <strong>Yakuniy narx: -$100</strong>
+        </div>
+    </div>
+
+    <!-- FORMA -->
+    <form method="post">
+        {% csrf_token %}
+        {{ form.model }}
+
+        <div class="form-section">
+            <h2>🔹 2 talik kombinatsiyalar</h2>
+
+            <div class="checkbox-row">
+                {{ form.generate_pairs }}
+                <label for="id_generate_pairs">{{ form.generate_pairs.label }}</label>
+            </div>
+
+            <div class="form-row" id="pair_discount_row">
+                <label for="id_pair_discount_percent">
+                    {{ form.pair_discount_percent.label }}
+                </label>
+                {{ form.pair_discount_percent }}
+                <span class="helptext">
+                    Butun son kiriting. Masalan: 15 = 15% chegirma
+                </span>
+            </div>
+
+            <div class="form-row" id="pair_limit_row">
+                <label for="id_pair_max_discount" style="color: #d32f2f;">
+                    {{ form.pair_max_discount.label }}
+                </label>
+                {{ form.pair_max_discount }}
+                <span class="helptext">
+                    <strong>Muhim:</strong> 0 kiritilsa, chegirma cheksiz bo'ladi!<br>
+                    Masalan: 50 = maksimal $50 chegirma (alohida narx -$50 dan past bo'lmaydi)
+                </span>
+            </div>
+
+            <h2>🔸 3 talik kombinatsiyalar</h2>
+
+            <div class="checkbox-row">
+                {{ form.generate_triples }}
+                <label for="id_generate_triples">{{ form.generate_triples.label }}</label>
+            </div>
+
+            <div class="form-row" id="triple_discount_row">
+                <label for="id_triple_discount_percent">
+                    {{ form.triple_discount_percent.label }}
+                </label>
+                {{ form.triple_discount_percent }}
+                <span class="helptext">
+                    Butun son kiriting. Masalan: 20 = 20% chegirma
+                </span>
+            </div>
+
+            <div class="form-row" id="triple_limit_row">
+                <label for="id_triple_max_discount" style="color: #d32f2f;">
+                    {{ form.triple_max_discount.label }}
+                </label>
+                {{ form.triple_max_discount }}
+                <span class="helptext">
+                    <strong>Muhim:</strong> 0 kiritilsa, chegirma cheksiz bo'ladi!<br>
+                    Masalan: 100 = maksimal $100 chegirma (alohida narx -$100 dan past bo'lmaydi)
+                </span>
+            </div>
+
+            <h2>💰 Yaxlitlash sozlamalari</h2>
+
+            <div class="checkbox-row">
+                {{ form.round_to_5_or_0 }}
+                <label for="id_round_to_5_or_0">{{ form.round_to_5_or_0.label }}</label>
+            </div>
+
+            <div class="rounding-info">
+                ✅ Narxlar 5 yoki 0 bilan tugaydigan butun songa yaxlitlanadi:<br>
+                • 1,2,3,4 → 5 ga (127 → 125)<br>
+                • 6,7,8,9 → 0 ga (128 → 130)<br>
+                • 0 yoki 5 → o'zgarishsiz (130 → 130, 135 → 135)
+            </div>
+
+            <h2>🛡️ Xavfsizlik sozlamalari</h2>
+
+            <div class="checkbox-row">
+                {{ form.skip_glass_screen }}
+                <label for="id_skip_glass_screen">{{ form.skip_glass_screen.label }}</label>
+            </div>
+
+            <div class="checkbox-row" style="border-color: #ff9800;">
+                {{ form.overwrite_existing }}
+                <label for="id_overwrite_existing" style="color: #d32f2f;">
+                    {{ form.overwrite_existing.label }}
+                </label>
+            </div>
+        </div>
+
+        <div class="submit-section">
+            <button type="submit" class="submit-button">
+                🎯 Kombinatsiyalarni yaratish
+            </button>
+            <a href="{% url 'admin:botapp_iphonemodel_change' model.pk %}" class="cancel-button">
+                Bekor qilish
+            </a>
+        </div>
+    </form>
+
+    <!-- STATISTIKA -->
+    {% if parts_count >= 2 %}
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-label">🔹 2 talik kombinatsiyalar</div>
+            <div class="stat-number">{{ pair_count }}</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-label">🔸 3 talik kombinatsiyalar</div>
+            <div class="stat-number">{{ triple_count }}</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-label">📊 Jami</div>
+            <div class="stat-number" style="color: #4CAF50;">{{ pair_count|add:triple_count }}</div>
+        </div>
+
+        {% if glass_screen_combos > 0 %}
+        <div class="stat-card" style="border-color: #ff9800;">
+            <div class="stat-label">⚠️ Oyna+Ekran (o'tkaziladi)</div>
+            <div class="stat-number" style="color: #ff9800;">{{ glass_screen_combos }}</div>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if glass_screen_combos > 0 %}
+    <div class="warning-box">
+        <strong>⚠️ Diqqat:</strong> Oyna va Ekran birgalikda bo'lishi mumkin emas! Tizim avtomatik ravishda <strong>{{ glass_screen_combos }} ta</strong> noto'g'ri kombinatsiyani o'tkazib yuboradi.
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="warning-box">
+        <strong>⚠️ Diqqat:</strong> Kombinatsiyalar yaratish uchun kamida 2 ta qism kerak!
+    </div>
+    {% endif %}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Limit inputlariga xususiy stil
+    const limitInputs = [
+        document.getElementById('id_pair_max_discount'),
+        document.getElementById('id_triple_max_discount')
+    ];
+
+    limitInputs.forEach(input => {
+        if (input) {
+            input.classList.add('limit-input');
+            input.addEventListener('focus', function() {
+                this.style.borderColor = '#d32f2f';
+                this.style.boxShadow = '0 0 0 2px rgba(211,47,47,0.2)';
+            });
+        }
+    });
+
+    // Checkbox visibility
+    const pairCheckbox = document.getElementById('id_generate_pairs');
+    const tripleCheckbox = document.getElementById('id_generate_triples');
+
+    const pairDiscountRow = document.getElementById('pair_discount_row');
+    const pairLimitRow = document.getElementById('pair_limit_row');
+    const tripleDiscountRow = document.getElementById('triple_discount_row');
+    const tripleLimitRow = document.getElementById('triple_limit_row');
+
+    function updateVisibility() {
+        // 2-talik
+        if (pairDiscountRow) {
+            pairDiscountRow.style.display = pairCheckbox && pairCheckbox.checked ? 'block' : 'none';
+        }
+        if (pairLimitRow) {
+            pairLimitRow.style.display = pairCheckbox && pairCheckbox.checked ? 'block' : 'none';
+        }
+
+        // 3-talik
+        if (tripleDiscountRow) {
+            tripleDiscountRow.style.display = tripleCheckbox && tripleCheckbox.checked ? 'block' : 'none';
+        }
+        if (tripleLimitRow) {
+            tripleLimitRow.style.display = tripleCheckbox && tripleCheckbox.checked ? 'block' : 'none';
+        }
+    }
+
+    if (pairCheckbox) pairCheckbox.addEventListener('change', updateVisibility);
+    if (tripleCheckbox) tripleCheckbox.addEventListener('change', updateVisibility);
+
+    updateVisibility();
+});
+</script>
+{% endblock %}

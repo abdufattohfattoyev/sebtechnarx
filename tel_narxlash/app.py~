@@ -1,0 +1,41 @@
+# app.py - ASOSIY FAYL (to'g'ri versiya)
+import logging
+from aiogram import executor
+
+from loader import dp, bot
+import middlewares, filters, handlers
+from data.config import ADMINS
+
+# Logging sozlamasi
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+
+# Bot ishga tushganda
+async def on_startup(dispatcher):
+    # Asosiy database yaratish
+    try:
+        from utils.db_api.database import init_db
+        init_db()
+        logging.info("✅ Asosiy baza yaratildi yoki ulandi")
+    except Exception as e:
+        logging.error(f"❌ Asosiy baza xato: {e}")
+
+    # STATISTIKA database yaratish
+    try:
+        from utils.db_api.stats_database import init_stats_tables
+        init_stats_tables()
+        logging.info("✅ Statistika bazasi yaratildi!")
+    except Exception as e:
+        logging.error(f"❌ Statistika baza xato: {e}")
+
+    logging.info("🚀 Bot muvaffaqiyatli ishga tushdi!")
+
+
+if __name__ == '__main__':
+    executor.start_polling(
+        dp,
+        on_startup=on_startup,
+        skip_updates=True
+    )

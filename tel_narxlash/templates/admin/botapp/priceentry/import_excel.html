@@ -1,0 +1,204 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    .upload-area {
+        border: 3px dashed #417690;
+        border-radius: 12px;
+        padding: 60px 40px;
+        text-align: center;
+        background: #f8f9fa;
+        margin: 30px 0;
+        transition: all 0.3s;
+    }
+    .upload-area:hover {
+        background: #e8f4f8;
+        border-color: #2d5468;
+    }
+    .upload-icon {
+        font-size: 64px;
+        color: #417690;
+        margin-bottom: 20px;
+    }
+    .upload-text {
+        font-size: 18px;
+        color: #333;
+        margin-bottom: 10px;
+    }
+    .upload-subtext {
+        color: #666;
+        font-size: 14px;
+    }
+    .file-input {
+        display: none;
+    }
+    .upload-button {
+        background: #417690;
+        color: white;
+        padding: 15px 40px;
+        border: none;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        margin-top: 20px;
+        transition: all 0.3s;
+    }
+    .upload-button:hover {
+        background: #2d5468;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+    .info-box {
+        background: #fff3cd;
+        border: 2px solid #ffc107;
+        border-radius: 8px;
+        padding: 20px;
+        margin: 20px 0;
+    }
+    .info-box h3 {
+        color: #856404;
+        margin-top: 0;
+    }
+    .info-box ul {
+        margin: 10px 0;
+        padding-left: 25px;
+    }
+    .info-box li {
+        margin: 8px 0;
+        color: #856404;
+    }
+    .download-template {
+        display: inline-block;
+        background: #28a745;
+        color: white;
+        padding: 12px 25px;
+        border-radius: 6px;
+        text-decoration: none;
+        margin: 20px 0;
+        font-weight: 600;
+        transition: all 0.3s;
+    }
+    .download-template:hover {
+        background: #218838;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+    .selected-file {
+        background: #d4edda;
+        border: 2px solid #28a745;
+        padding: 15px;
+        border-radius: 8px;
+        margin: 20px 0;
+        display: none;
+    }
+    .selected-file.show {
+        display: block;
+    }
+</style>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const fileInput = document.getElementById('excel-file-input');
+    const uploadArea = document.querySelector('.upload-area');
+    const selectedFileDiv = document.querySelector('.selected-file');
+    const fileNameSpan = document.getElementById('file-name');
+
+    uploadArea.addEventListener('click', function() {
+        fileInput.click();
+    });
+
+    fileInput.addEventListener('change', function() {
+        if (this.files && this.files[0]) {
+            fileNameSpan.textContent = this.files[0].name;
+            selectedFileDiv.classList.add('show');
+        }
+    });
+
+    // Drag and drop
+    uploadArea.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        this.style.background = '#d1ecf1';
+    });
+
+    uploadArea.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        this.style.background = '#f8f9fa';
+    });
+
+    uploadArea.addEventListener('drop', function(e) {
+        e.preventDefault();
+        this.style.background = '#f8f9fa';
+        
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            fileInput.files = e.dataTransfer.files;
+            fileNameSpan.textContent = e.dataTransfer.files[0].name;
+            selectedFileDiv.classList.add('show');
+        }
+    });
+});
+</script>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+    &rsaquo; <a href="{% url 'admin:botapp_priceentry_changelist' %}">{% trans 'Telefon narxlari' %}</a>
+    &rsaquo; {% trans 'Excel faylidan import qilish' %}
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>📥 Excel Faylidan Import Qilish</h1>
+
+<div class="info-box">
+    <h3>⚠️ Muhim ma'lumotlar:</h3>
+    <ul>
+        <li>Excel fayli <strong>.xlsx</strong> formatida bo'lishi kerak</li>
+        <li>Birinchi qator sarlavha (ustunlar nomi) bo'lishi kerak</li>
+        <li>Quyidagi ustunlar mavjud bo'lishi shart:
+            <ul>
+                <li>Model, Xotira, Rang, SIM Region, SIM Turi, Batareya, Quti, Shikastlar, Narx</li>
+            </ul>
+        </li>
+        <li>Model, Xotira, Rang, SIM Region bazada mavjud bo'lishi kerak</li>
+        <li>Shikastlar vergul bilan ajratilgan bo'lishi mumkin</li>
+    </ul>
+</div>
+
+<a href="{% url 'admin:priceentry_export' %}" class="download-template">
+    📊 Namuna faylni yuklab olish (hozirgi ma'lumotlar)
+</a>
+
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    
+    <div class="upload-area">
+        <div class="upload-icon">📂</div>
+        <div class="upload-text">Excel faylni tanlang yoki bu yerga tashlang</div>
+        <div class="upload-subtext">Faqat .xlsx formatdagi fayllar qabul qilinadi</div>
+        <input type="file" name="excel_file" id="excel-file-input" class="file-input" accept=".xlsx" required>
+    </div>
+
+    <div class="selected-file">
+        <strong>✅ Tanlangan fayl:</strong> <span id="file-name"></span>
+    </div>
+
+    <div style="text-align: center;">
+        <button type="submit" class="upload-button">
+            🚀 Import qilishni boshlash
+        </button>
+    </div>
+</form>
+
+<div class="info-box" style="background: #d1ecf1; border-color: #0c5460; margin-top: 40px;">
+    <h3>💡 Maslahat:</h3>
+    <ul style="color: #0c5460;">
+        <li>Avval "Namuna faylni yuklab olish" tugmasini bosib, hozirgi formatni ko'ring</li>
+        <li>O'z ma'lumotlaringizni shu formatda tayyorlang</li>
+        <li>Import qilishdan oldin ma'lumotlarni tekshiring</li>
+        <li>Katta hajmdagi fayllar uchun bir necha qismga bo'lib import qiling</li>
+    </ul>
+</div>
+{% endblock %}
