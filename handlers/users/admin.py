@@ -46,7 +46,7 @@ from utils.db_api.user_database import (
     add_balance,
     get_top_models_analytics,
 )
-from utils.misc.maintenance import get_maintenance_config, toggle_feature, is_feature_enabled, save_maintenance_config
+from utils.misc.maintenance import get_maintenance_config, toggle_feature, is_feature_enabled, save_maintenance_config, is_free_mode, toggle_free_mode
 
 # ============================================
 # KONSTANTALAR (OPTIMIZED)
@@ -1289,6 +1289,51 @@ async def um_trials_input(message: types.Message, state: FSMContext):
 
 
 # ============================================
+# BEPUL / PULLIK REJIM TOGGLE
+# ============================================
+
+@dp.message_handler(lambda m: m.text == "🆓 Bepul/Pullik rejim" and m.from_user.id in ADMINS, state="*")
+async def free_mode_toggle_handler(message: types.Message, state: FSMContext):
+    await state.finish()
+    current = is_free_mode()
+    mode_text = "🆓 Bepul rejim" if current else "💰 Pullik rejim"
+    toggle_text = "💰 Pullikka o'tkazish" if current else "🆓 Bepulga o'tkazish"
+
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        InlineKeyboardButton(toggle_text, callback_data="toggle_free_mode"),
+    )
+    await message.answer(
+        f"⚙️ <b>Hozirgi rejim: {mode_text}</b>\n\n"
+        f"{'🆓 Barcha foydalanuvchilar bepul narxlayapti.' if current else '💰 Foydalanuvchilar balans/bepul urinish ishlatmoqda.'}\n\n"
+        f"Rejimni o'zgartirmoqchimisiz?",
+        parse_mode="HTML",
+        reply_markup=kb
+    )
+
+
+@dp.callback_query_handler(lambda c: c.data == "toggle_free_mode")
+async def toggle_free_mode_callback(cb: types.CallbackQuery):
+    if cb.from_user.id not in ADMINS:
+        await cb.answer("🚫 Ruxsat yo'q", show_alert=True)
+        return
+    result = toggle_free_mode(cb.from_user.id)
+    new_mode = result.get('free_mode', False)
+    mode_text = "🆓 Bepul rejim" if new_mode else "💰 Pullik rejim"
+    toggle_text = "💰 Pullikka o'tkazish" if new_mode else "🆓 Bepulga o'tkazish"
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(toggle_text, callback_data="toggle_free_mode"))
+    await cb.message.edit_text(
+        f"✅ <b>{result['message']}</b>\n\n"
+        f"⚙️ <b>Hozirgi rejim: {mode_text}</b>\n\n"
+        f"{'🆓 Barcha foydalanuvchilar bepul narxlayapti.' if new_mode else '💰 Foydalanuvchilar balans/bepul urinish ishlatmoqda.'}",
+        parse_mode="HTML",
+        reply_markup=kb
+    )
+    await cb.answer()
+
+
+# ============================================
 # MIJOZ XARIDLARI
 # ============================================
 
@@ -1319,13 +1364,20 @@ async def mijoz_xarid_search(message: types.Message, state: FSMContext):
     from datetime import datetime, timedelta
 
     phone = message.text.strip()
-    # +998 yoki 998 formatga keltirish
     digits = re.sub(r'\D', '', phone)
+
+    # Faqat raqam bo'lishi kerak: 9 yoki 12 ta raqam
+    if len(digits) not in (9, 12) or (len(digits) == 12 and not digits.startswith('998')):
+        await message.answer(
+            "❌ Noto'g'ri format. Telefon raqamni kiriting:\n\n"
+            "<i>Masalan: +998901234567 yoki 901234567</i>",
+            parse_mode="HTML"
+        )
+        return
+
     if len(digits) == 9:
         phone = f"+998{digits}"
-    elif len(digits) == 12 and digits.startswith('998'):
-        phone = f"+{digits}"
-    elif not phone.startswith('+'):
+    else:
         phone = f"+{digits}"
 
     wait_msg = await message.answer("🔄 Yuklanmoqda...", parse_mode="HTML")

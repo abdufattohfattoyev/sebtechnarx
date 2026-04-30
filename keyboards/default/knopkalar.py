@@ -260,8 +260,11 @@ def admin_kb():
         KeyboardButton("🗑 Narxlarni tozalash")
     )
 
-    # Beshinchi qator - Tamirlash rejimi
-    kb.row(KeyboardButton("🔧 Tamirlash rejimi"))
+    # Beshinchi qator - Rejimlar
+    kb.row(
+        KeyboardButton("🔧 Tamirlash rejimi"),
+        KeyboardButton("🆓 Bepul/Pullik rejim")
+    )
 
     # Oltinchi qator - Orqaga
     kb.row(KeyboardButton("🏠 Bosh menyu"))

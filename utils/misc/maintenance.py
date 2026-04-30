@@ -18,11 +18,16 @@ def get_maintenance_config() -> Dict:
     try:
         if os.path.exists(MAINTENANCE_FILE):
             with open(MAINTENANCE_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                config = json.load(f)
+            # Eski faylda free_mode bo'lmasa qo'shamiz
+            if 'free_mode' not in config:
+                config['free_mode'] = False
+            return config
         else:
             # Default konfiguratsiya
             default_config = {
                 "maintenance_mode": False,
+                "free_mode": False,
                 "features": {
                     "pricing": True,
                     "payment": True,
@@ -38,6 +43,7 @@ def get_maintenance_config() -> Dict:
         print(f"❌ Maintenance config read error: {e}")
         return {
             "maintenance_mode": False,
+            "free_mode": False,
             "features": {
                 "pricing": True,
                 "payment": True,
@@ -171,6 +177,27 @@ def toggle_feature(feature: str, user_id: Optional[int] = None) -> Dict:
             'success': False,
             'message': '❌ Xatolik yuz berdi'
         }
+
+
+def is_free_mode() -> bool:
+    """Bepul rejim yoqilganmi?"""
+    config = get_maintenance_config()
+    return config.get('free_mode', False)
+
+
+def toggle_free_mode(user_id: Optional[int] = None) -> Dict:
+    """Bepul/pullik rejimni almashtirish"""
+    config = get_maintenance_config()
+    current = config.get('free_mode', False)
+    config['free_mode'] = not current
+    config['updated_by'] = user_id
+    if save_maintenance_config(config):
+        if config['free_mode']:
+            msg = "🆓 Bepul rejim yoqildi — barcha foydalanuvchilar bepul narxlaydi!"
+        else:
+            msg = "💰 Pullik rejim yoqildi — foydalanuvchilar balans ishlatadi."
+        return {'success': True, 'free_mode': config['free_mode'], 'message': msg}
+    return {'success': False, 'message': '❌ Xatolik yuz berdi'}
 
 
 def get_maintenance_status() -> str:

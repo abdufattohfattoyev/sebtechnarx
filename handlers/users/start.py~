@@ -63,11 +63,11 @@ INSTAGRAM_LINK = "https://www.instagram.com/sebtech.uz"
 CALL_CENTER_1 = "+998(77)-285-99-99"
 CALL_CENTER_2 = "+998(91)-285-99-99"
 
-ABOUT_TEXT = f"""✨ <b>SEBTECH</b>
+ABOUT_TEXT = f"""✨ <b>SEPTECH</b>
 
 <i>Bozorni his qiladigan narx. Qarorni oson qiladigan standart.</i>
 
-📌 <b>SEBTECH Narxlash Boti</b> — <b>Xurshed Tilloyev</b> tashabbusi bilan yaratilgan premium tizim.
+📌 <b>SEPTECH Narxlash Boti</b> — <b>Xurshed Tilloyev</b> tashabbusi bilan yaratilgan premium tizim.
 Real savdo tajribasi + bozor tahlillari asosida ishlaydi.
 
 <b>Nima beradi?</b>
@@ -87,7 +87,7 @@ Real savdo tajribasi + bozor tahlillari asosida ishlaydi.
 - {CALL_CENTER_1}
 - {CALL_CENTER_2}
 
-<i>SEBTECH — telefon narxining yangi standarti.</i>
+<i>SEPTECH — telefon narxining yangi standarti.</i>
 """
 
 

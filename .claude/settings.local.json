@@ -7,7 +7,11 @@
       "Bash(python D:/sebtechnarx/manage.py version)",
       "Bash(curl -s 'https://seb-tech.uz/shops/api/customer/purchases/?phone=%2B998937997004' -H 'X-Bot-Token: 8355234985:AAFIKx16glDeuu3MG_OnjuNTHu9e5HbuGNM' -H 'Accept: application/json')",
       "Bash(python3 -m json.tool)",
-      "Bash(curl -sv 'https://seb-tech.uz/shops/api/customer/purchases/?phone=%2B998937997004' -H 'X-Bot-Token: 8355234985:AAFIKx16glDeuu3MG_OnjuNTHu9e5HbuGNM' -H 'Accept: application/json')"
+      "Bash(curl -sv 'https://seb-tech.uz/shops/api/customer/purchases/?phone=%2B998937997004' -H 'X-Bot-Token: 8355234985:AAFIKx16glDeuu3MG_OnjuNTHu9e5HbuGNM' -H 'Accept: application/json')",
+      "Read(//root/**)",
+      "Bash(docker-compose down *)",
+      "Bash(docker rm *)",
+      "Bash(docker-compose up *)"
     ]
   }
 }
