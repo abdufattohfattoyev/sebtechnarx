@@ -43,6 +43,8 @@ from utils.db_api.user_database import (
     search_user,
     block_user,
     set_free_trials,
+    set_free_trials_for_all,
+    add_free_trials_for_all,
     add_balance,
     get_top_models_analytics,
 )
@@ -71,6 +73,11 @@ class AdminUserState(StatesGroup):
     waiting_search = State()
     waiting_balance = State()
     waiting_trials = State()
+
+
+class AdminBulkTrialsState(StatesGroup):
+    waiting_action = State()
+    waiting_count = State()
 
 
 # ============================================
@@ -1490,6 +1497,81 @@ async def mijoz_xarid_search(message: types.Message, state: FSMContext):
         await message.answer("\n".join(lines[mid:]), parse_mode="HTML", reply_markup=admin_kb())
 
     await state.finish()
+
+
+# ============================================
+# HAMMA UCHUN BEPUL URINISH
+# ============================================
+
+@dp.message_handler(lambda m: m.text == "🎁 Hamma uchun urinish" and m.from_user.id in ADMINS, state="*")
+async def bulk_trials_handler(message: types.Message, state: FSMContext):
+    await state.finish()
+
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        InlineKeyboardButton("➕ Qo'shish (ustiga)", callback_data="bulk_trials_add"),
+        InlineKeyboardButton("🔄 O'rnatish (almashtirish)", callback_data="bulk_trials_set"),
+    )
+    await message.answer(
+        "🎁 <b>HAMMA FOYDALANUVCHILAR UCHUN BEPUL URINISH</b>\n\n"
+        "Qanday amal bajarmoqchisiz?\n\n"
+        "• <b>Qo'shish</b> — mavjud urinishlarga qo'shiladi\n"
+        "• <b>O'rnatish</b> — barcha urinishlar yangi son bilan almashtiriladi",
+        parse_mode="HTML",
+        reply_markup=kb
+    )
+
+
+@dp.callback_query_handler(lambda c: c.data in ["bulk_trials_add", "bulk_trials_set"], user_id=ADMINS)
+async def bulk_trials_action(callback: types.CallbackQuery, state: FSMContext):
+    action = "add" if callback.data == "bulk_trials_add" else "set"
+    await state.update_data(bulk_action=action)
+    await AdminBulkTrialsState.waiting_count.set()
+    word = "qo'shmoqchi" if action == "add" else "o'rnatmoqchi"
+    await callback.message.answer(
+        f"Nechta bepul urinish {word}siz?\n<i>Raqam kiriting (masalan: 3)</i>",
+        parse_mode="HTML",
+        reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add("❌ Bekor qilish")
+    )
+    await callback.answer()
+
+
+@dp.message_handler(state=AdminBulkTrialsState.waiting_count)
+async def bulk_trials_count(message: types.Message, state: FSMContext):
+    if message.text == "❌ Bekor qilish":
+        await state.finish()
+        await message.answer("Bekor qilindi.", reply_markup=admin_kb())
+        return
+
+    try:
+        count = int(message.text.strip())
+        if count < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ 0 yoki undan katta son kiriting:")
+        return
+
+    data = await state.get_data()
+    action = data.get('bulk_action', 'set')
+
+    wait_msg = await message.answer("⏳ Bajarilmoqda...")
+
+    if action == "add":
+        result = add_free_trials_for_all(count)
+    else:
+        result = set_free_trials_for_all(count)
+
+    await state.finish()
+
+    if result['success']:
+        await wait_msg.edit_text(
+            f"✅ <b>Muvaffaqiyatli!</b>\n\n{result['message']}",
+            parse_mode="HTML"
+        )
+    else:
+        await wait_msg.edit_text(f"❌ Xatolik: {result['error']}")
+
+    await message.answer("Admin panel", reply_markup=admin_kb())
 
 
 # ============================================

@@ -1404,47 +1404,52 @@ async def show_final_price_from_callback(call: types.CallbackQuery, state: FSMCo
 
     user_id = call.from_user.id
 
-    local_check = check_can_price(user_id)
-    free_trials = int(local_check.get("free_trials_left", 0) or 0)
-
     is_free = False
     balance = 0
+    free_trials = 0
 
-    if free_trials > 0:
-        local_res = use_pricing_local(
-            user_id, phone_model, data['storage'], color,
-            battery, sim_type, has_box, damage_display, price_value
-        )
-
-        if not local_res.get("success"):
-            await call.message.answer(f"❌ {local_res.get('error')}", reply_markup=main_menu(user_id in ADMINS))
-            await state.finish()
-            return
-
+    if is_free_mode():
+        # Bepul rejim — hech narsa ayirmaymiz
         is_free = True
-        free_trials = int(local_res.get("free_trials_left", 0) or 0)
-
-        try:
-            api_res = await api.get_balance(user_id)
-            balance = int(api_res.get("balance", 0) or 0)
-        except:
-            balance = 0
-
     else:
-        try:
-            api_res = await api.use_pricing(user_id, phone_model, price_value)
-        except Exception as e:
-            await call.message.answer("❌ Server bilan aloqa uzildi. Bir daqiqadan so'ng qaytadan urinib ko'ring.", reply_markup=main_menu(user_id in ADMINS))
-            await state.finish()
-            return
+        local_check = check_can_price(user_id)
+        free_trials = int(local_check.get("free_trials_left", 0) or 0)
 
-        if not api_res.get("success"):
-            await call.message.answer(f"❌ {api_res.get('error')}", reply_markup=main_menu(user_id in ADMINS))
-            await state.finish()
-            return
+        if free_trials > 0:
+            local_res = use_pricing_local(
+                user_id, phone_model, data['storage'], color,
+                battery, sim_type, has_box, damage_display, price_value
+            )
 
-        is_free = False
-        balance = int(api_res.get("balance", 0) or 0)
+            if not local_res.get("success"):
+                await call.message.answer(f"❌ {local_res.get('error')}", reply_markup=main_menu(user_id in ADMINS))
+                await state.finish()
+                return
+
+            is_free = True
+            free_trials = int(local_res.get("free_trials_left", 0) or 0)
+
+            try:
+                api_res = await api.get_balance(user_id)
+                balance = int(api_res.get("balance", 0) or 0)
+            except:
+                balance = 0
+
+        else:
+            try:
+                api_res = await api.use_pricing(user_id, phone_model, price_value)
+            except Exception as e:
+                await call.message.answer("❌ Server bilan aloqa uzildi. Bir daqiqadan so'ng qaytadan urinib ko'ring.", reply_markup=main_menu(user_id in ADMINS))
+                await state.finish()
+                return
+
+            if not api_res.get("success"):
+                await call.message.answer(f"❌ {api_res.get('error')}", reply_markup=main_menu(user_id in ADMINS))
+                await state.finish()
+                return
+
+            is_free = False
+            balance = int(api_res.get("balance", 0) or 0)
 
     now = uz_now()
     display_price = final_price if isinstance(final_price, str) else f"${price_value:,.0f}".replace(",", " ")
@@ -1519,47 +1524,52 @@ async def show_final_price(message: types.Message, state: FSMContext):
 
     user_id = message.from_user.id
 
-    local_check = check_can_price(user_id)
-    free_trials = int(local_check.get("free_trials_left", 0) or 0)
-
     is_free = False
     balance = 0
+    free_trials = 0
 
-    if free_trials > 0:
-        local_res = use_pricing_local(
-            user_id, phone_model, storage, color, battery,
-            sim_type, has_box, damage_display, price_value
-        )
-
-        if not local_res.get("success"):
-            await message.answer(f"❌ {local_res.get('error')}", reply_markup=main_menu(user_id in ADMINS))
-            await state.finish()
-            return
-
+    if is_free_mode():
+        # Bepul rejim — hech narsa ayirmaymiz
         is_free = True
-        free_trials = int(local_res.get("free_trials_left", 0) or 0)
-
-        try:
-            api_res = await api.get_balance(user_id)
-            balance = int(api_res.get("balance", 0) or 0)
-        except:
-            balance = 0
-
     else:
-        try:
-            api_res = await api.use_pricing(user_id, phone_model, price_value)
-        except Exception as e:
-            await message.answer("❌ Server bilan aloqa uzildi. Bir daqiqadan so'ng qaytadan urinib ko'ring.", reply_markup=main_menu(user_id in ADMINS))
-            await state.finish()
-            return
+        local_check = check_can_price(user_id)
+        free_trials = int(local_check.get("free_trials_left", 0) or 0)
 
-        if not api_res.get("success"):
-            await message.answer(f"❌ {api_res.get('error')}", reply_markup=main_menu(user_id in ADMINS))
-            await state.finish()
-            return
+        if free_trials > 0:
+            local_res = use_pricing_local(
+                user_id, phone_model, storage, color, battery,
+                sim_type, has_box, damage_display, price_value
+            )
 
-        is_free = False
-        balance = int(api_res.get("balance", 0) or 0)
+            if not local_res.get("success"):
+                await message.answer(f"❌ {local_res.get('error')}", reply_markup=main_menu(user_id in ADMINS))
+                await state.finish()
+                return
+
+            is_free = True
+            free_trials = int(local_res.get("free_trials_left", 0) or 0)
+
+            try:
+                api_res = await api.get_balance(user_id)
+                balance = int(api_res.get("balance", 0) or 0)
+            except:
+                balance = 0
+
+        else:
+            try:
+                api_res = await api.use_pricing(user_id, phone_model, price_value)
+            except Exception as e:
+                await message.answer("❌ Server bilan aloqa uzildi. Bir daqiqadan so'ng qaytadan urinib ko'ring.", reply_markup=main_menu(user_id in ADMINS))
+                await state.finish()
+                return
+
+            if not api_res.get("success"):
+                await message.answer(f"❌ {api_res.get('error')}", reply_markup=main_menu(user_id in ADMINS))
+                await state.finish()
+                return
+
+            is_free = False
+            balance = int(api_res.get("balance", 0) or 0)
 
     now = uz_now()
     display_price = final_price if isinstance(final_price, str) else f"${price_value:,.0f}".replace(",", " ")

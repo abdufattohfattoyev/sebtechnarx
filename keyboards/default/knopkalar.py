@@ -266,7 +266,10 @@ def admin_kb():
         KeyboardButton("🆓 Bepul/Pullik rejim")
     )
 
-    # Oltinchi qator - Orqaga
+    # Oltinchi qator - Hamma uchun urinish
+    kb.row(KeyboardButton("🎁 Hamma uchun urinish"))
+
+    # Yettinchi qator - Orqaga
     kb.row(KeyboardButton("🏠 Bosh menyu"))
 
     return kb

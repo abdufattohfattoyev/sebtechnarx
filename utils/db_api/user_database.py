@@ -1130,6 +1130,46 @@ def set_free_trials(telegram_id, count):
         conn.close()
 
 
+def set_free_trials_for_all(count):
+    """Barcha foydalanuvchilarga bepul urinish o'rnatish"""
+    conn = get_user_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE users SET free_trials_left = %s, updated_at = CURRENT_TIMESTAMP RETURNING id",
+            (count,)
+        )
+        updated = cursor.rowcount
+        conn.commit()
+        return {'success': True, 'updated': updated, 'message': f'✅ {updated} ta foydalanuvchiga {count} ta bepul urinish berildi'}
+    except Exception as e:
+        conn.rollback()
+        return {'success': False, 'error': str(e)}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def add_free_trials_for_all(count):
+    """Barcha foydalanuvchilarga bepul urinish QO'SHISH (ustiga)"""
+    conn = get_user_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE users SET free_trials_left = free_trials_left + %s, updated_at = CURRENT_TIMESTAMP RETURNING id",
+            (count,)
+        )
+        updated = cursor.rowcount
+        conn.commit()
+        return {'success': True, 'updated': updated, 'message': f'✅ {updated} ta foydalanuvchiga +{count} ta bepul urinish qo\'shildi'}
+    except Exception as e:
+        conn.rollback()
+        return {'success': False, 'error': str(e)}
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def get_user_payment_history(telegram_id, limit=5):
     """Foydalanuvchi to'lov tarixini olish"""
     conn = get_user_conn()
