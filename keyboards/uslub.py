@@ -17,7 +17,7 @@
 from aiogram.types import InlineKeyboardButton, KeyboardButton
 
 __all__ = (
-    "YASHIL", "KOK", "QIZIL", "ODDIY",
+    "YASHIL", "KOK", "QIZIL", "ODDIY", "NAV",
     "rang", "btn", "ibtn",
 )
 
@@ -25,6 +25,19 @@ YASHIL = "success"
 KOK = "primary"
 QIZIL = "danger"
 ODDIY = ""  # rang umuman qo'shilmaydi
+
+# NAVIGATSIYA — "◀️ Orqaga", "🏠 Bosh menyu" kabi tugmalar.
+#
+# Ular ataylab RANGSIZ. Telegram atigi uchta rang beradi va uchalasi ham
+# band: yashil — asosiy harakat, ko'k — tanlov, qizil — xavfli amal.
+# Navigatsiyani ham shulardan biriga bo'yash noto'g'ri bo'lardi: qizil
+# "Orqaga" xavfli deb tushuniladi, ko'k esa uni tanlovlar bilan bir
+# qatorga qo'yadi — xotira modeli 512 GB bilan "Orqaga" ni tenglashtiradi.
+#
+# Rangsiz tugma ko'zga urilmay, orqa fonga chekinadi. Ekrandagi TANLOV
+# ajralib turadi, chiqish yo'li esa kerak bo'lganda topiladi. Farq ko'rinib
+# turadi — aynan shu so'ralgandi.
+NAV = ODDIY
 
 
 # ─────────────────────────── AVTOMATIK RANG ───────────────────────────
@@ -35,6 +48,8 @@ ODDIY = ""  # rang umuman qo'shilmaydi
 # to'g'ri rang oladi.
 
 _EMOJI_RANG = {
+    # navigatsiya — rangsiz (yuqoridagi NAV izohiga qarang)
+    "◀️": NAV, "🏠": NAV, "⬅️": NAV, "🔙": NAV,
     # yashil — tasdiq, qo'shish, boshlash, pul kirimi
     "✅": YASHIL, "➕": YASHIL, "🟢": YASHIL, "▶️": YASHIL, "💳": YASHIL,
     "🎁": YASHIL, "💰": YASHIL, "📥": YASHIL,

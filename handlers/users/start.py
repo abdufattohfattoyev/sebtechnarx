@@ -24,7 +24,7 @@ from keyboards.inline.payment_keyboards import (
     create_payment_inline_keyboard,
     tarif_satri
 )
-from keyboards.uslub import btn, ibtn, YASHIL, KOK, QIZIL
+from keyboards.uslub import btn, ibtn, YASHIL, KOK, QIZIL, NAV
 from data.config import ADMINS, FREE_TRIALS_DEFAULT
 from utils.misc.maintenance import get_maintenance_status, is_feature_enabled, is_free_mode
 
@@ -209,7 +209,7 @@ def parts_choice_kb():
     """Qismlar tanlash tugmalari"""
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.row(btn("✅ Ha", YASHIL), btn("❌ Yo'q", QIZIL))
-    kb.row(btn("◀️ Orqaga", KOK), btn("🏠 Bosh menyu", KOK))
+    kb.row(btn("◀️ Orqaga", NAV), btn("🏠 Bosh menyu", NAV))
     return kb
 
 
@@ -1159,14 +1159,14 @@ async def battery_selected(message: types.Message, state: FSMContext):
         await state.update_data(sim_step_shown=True)
         kb = ReplyKeyboardMarkup(resize_keyboard=True)
         kb.row(btn("📱 SIM karta", KOK), btn("📲 eSIM", KOK))
-        kb.row(btn("◀️ Orqaga", KOK), btn("🏠 Bosh menyu", KOK))
+        kb.row(btn("◀️ Orqaga", NAV), btn("🏠 Bosh menyu", NAV))
         await message.answer("<b>📞 SIM:</b>", reply_markup=kb, parse_mode="HTML")
         await UserState.waiting_sim.set()
     else:
         await state.update_data(sim_step_shown=False)
         kb = ReplyKeyboardMarkup(resize_keyboard=True)
         kb.row(btn("✅ Bor", YASHIL), btn("❌ Yo'q", QIZIL))
-        kb.row(btn("◀️ Orqaga", KOK), btn("🏠 Bosh menyu", KOK))
+        kb.row(btn("◀️ Orqaga", NAV), btn("🏠 Bosh menyu", NAV))
         await message.answer("<b>📦 Quti:</b>", reply_markup=kb, parse_mode="HTML")
         await UserState.waiting_box.set()
         await state.update_data(sim_type="physical")
@@ -1193,7 +1193,7 @@ async def sim_selected(message: types.Message, state: FSMContext):
 
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.row(btn("✅ Bor", YASHIL), btn("❌ Yo'q", QIZIL))
-    kb.row(btn("◀️ Orqaga", KOK), btn("🏠 Bosh menyu", KOK))
+    kb.row(btn("◀️ Orqaga", NAV), btn("🏠 Bosh menyu", NAV))
     await message.answer("<b>📦 Quti:</b>", reply_markup=kb, parse_mode="HTML")
     await UserState.waiting_box.set()
 
@@ -1213,7 +1213,7 @@ async def box_selected(message: types.Message, state: FSMContext):
         if data.get('sim_step_shown'):
             kb = ReplyKeyboardMarkup(resize_keyboard=True)
             kb.row(btn("📱 SIM karta", KOK), btn("📲 eSIM", KOK))
-            kb.row(btn("◀️ Orqaga", KOK), btn("🏠 Bosh menyu", KOK))
+            kb.row(btn("◀️ Orqaga", NAV), btn("🏠 Bosh menyu", NAV))
             await message.answer("<b>📞 SIM:</b>", reply_markup=kb, parse_mode="HTML")
             await UserState.waiting_sim.set()
             return
@@ -1234,7 +1234,7 @@ async def box_selected(message: types.Message, state: FSMContext):
     if message.text not in ["✅ Bor", "❌ Yo'q"]:
         kb = ReplyKeyboardMarkup(resize_keyboard=True)
         kb.row(btn("✅ Bor", YASHIL), btn("❌ Yo'q", QIZIL))
-        kb.row(btn("◀️ Orqaga", KOK), btn("🏠 Bosh menyu", KOK))
+        kb.row(btn("◀️ Orqaga", NAV), btn("🏠 Bosh menyu", NAV))
         await message.answer("❌ Tugmalardan tanlang:", reply_markup=kb)
         return
 
@@ -1260,7 +1260,7 @@ async def parts_choice_selected(message: types.Message, state: FSMContext):
         else:
             kb = ReplyKeyboardMarkup(resize_keyboard=True)
             kb.row(btn("✅ Bor", YASHIL), btn("❌ Yo'q", QIZIL))
-            kb.row(btn("◀️ Orqaga", KOK), btn("🏠 Bosh menyu", KOK))
+            kb.row(btn("◀️ Orqaga", NAV), btn("🏠 Bosh menyu", NAV))
             await message.answer("<b>📦 Quti:</b>", reply_markup=kb, parse_mode="HTML")
             await UserState.waiting_box.set()
         return
@@ -1275,7 +1275,7 @@ async def parts_choice_selected(message: types.Message, state: FSMContext):
         markup = create_parts_inline_kb([], PARTS)
 
         kb = ReplyKeyboardMarkup(resize_keyboard=True)
-        kb.row(btn("◀️ Orqaga", KOK), btn("🏠 Bosh menyu", KOK))
+        kb.row(btn("◀️ Orqaga", NAV), btn("🏠 Bosh menyu", NAV))
 
         await message.answer(
             "<b>🔧 Almashgan qismlar (maks 3 ta):</b>",

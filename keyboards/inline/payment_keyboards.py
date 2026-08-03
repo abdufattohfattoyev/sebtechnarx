@@ -5,7 +5,7 @@
 
 from aiogram.types import InlineKeyboardMarkup
 
-from keyboards.uslub import ibtn, YASHIL, KOK, QIZIL
+from keyboards.uslub import ibtn, YASHIL, KOK, QIZIL, NAV
 
 
 def tarif_satri(tariff) -> str:
@@ -34,7 +34,7 @@ def create_tariffs_inline_keyboard(tariffs):
         markup.add(ibtn(tarif_satri(tariff), KOK,
                         callback_data=f"tariff_{tariff['id']}"))
 
-    markup.add(ibtn("◀️ Orqaga", KOK, callback_data="back_to_main"))
+    markup.add(ibtn("◀️ Orqaga", NAV, callback_data="back_to_main"))
 
     return markup
 

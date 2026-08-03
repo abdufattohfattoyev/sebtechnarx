@@ -12,7 +12,7 @@
 
 from aiogram.types import ReplyKeyboardMarkup, InlineKeyboardMarkup, WebAppInfo
 
-from keyboards.uslub import btn, ibtn, YASHIL, KOK, QIZIL
+from keyboards.uslub import btn, ibtn, YASHIL, KOK, QIZIL, NAV
 
 MINIAPP_URL = "https://seb-tech.uz/miniapp/"
 
@@ -64,7 +64,7 @@ def main_menu(is_admin=False):
 def back_kb():
     """Orqaga va Bosh menyu"""
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.row(btn("◀️ Orqaga", KOK), btn("🏠 Bosh menyu", KOK))
+    kb.row(btn("◀️ Orqaga", NAV), btn("🏠 Bosh menyu", NAV))
     return kb
 
 
@@ -81,7 +81,7 @@ def balance_menu_kb():
     """Balans menu"""
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add(btn("💰 Hisobni to'ldirish", YASHIL))
-    kb.add(btn("◀️ Orqaga", KOK))
+    kb.add(btn("◀️ Orqaga", NAV))
     return kb
 
 
@@ -131,9 +131,9 @@ def create_keyboard(items, row_width=2, back=True, main_menu=True):
     # Qo'shimcha tugmalar
     extra_buttons = []
     if back:
-        extra_buttons.append(btn("◀️ Orqaga", KOK))
+        extra_buttons.append(btn("◀️ Orqaga", NAV))
     if main_menu:
-        extra_buttons.append(btn("🏠 Bosh menyu", KOK))
+        extra_buttons.append(btn("🏠 Bosh menyu", NAV))
 
     if extra_buttons:
         kb.row(*extra_buttons)
@@ -145,7 +145,7 @@ def parts_choice_kb():
     """Almashgan qism bormi/yo'q"""
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.row(btn("✅ Ha", YASHIL), btn("❌ Yo'q", QIZIL))
-    kb.row(btn("◀️ Orqaga", KOK), btn("🏠 Bosh menyu", KOK))
+    kb.row(btn("◀️ Orqaga", NAV), btn("🏠 Bosh menyu", NAV))
     return kb
 
 
@@ -258,7 +258,7 @@ def admin_kb():
     kb.row(btn("🎁 Hamma uchun urinish", KOK))
 
     # Yettinchi qator - Orqaga
-    kb.row(btn("🏠 Bosh menyu", KOK))
+    kb.row(btn("🏠 Bosh menyu", NAV))
 
     return kb
 
@@ -283,7 +283,7 @@ def maintenance_kb():
     )
 
     # Uchinchi qator - Orqaga
-    kb.row(btn("◀️ Orqaga", KOK))
+    kb.row(btn("◀️ Orqaga", NAV))
 
     return kb
 
@@ -297,5 +297,5 @@ def cleanup_confirm_kb():
         btn("✅ Ha, tozalash", QIZIL),
         btn("❌ Yo'q, bekor qilish", KOK),
     )
-    kb.row(btn("🏠 Bosh menyu", KOK))
+    kb.row(btn("🏠 Bosh menyu", NAV))
     return kb

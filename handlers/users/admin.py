@@ -13,7 +13,7 @@ from aiogram.utils.exceptions import RetryAfter
 
 from loader import dp, bot
 from keyboards.default.knopkalar import admin_kb, cleanup_confirm_kb, maintenance_kb
-from keyboards.uslub import btn, ibtn, YASHIL, KOK, QIZIL
+from keyboards.uslub import btn, ibtn, YASHIL, KOK, QIZIL, NAV
 from data.config import ADMINS
 
 # ============================================
@@ -1195,7 +1195,7 @@ async def user_manage_handler(message: types.Message, state: FSMContext):
         "Telegram ID yoki telefon raqam yuboring:\n"
         "<i>Misol: 123456789 yoki +998901234567</i>",
         parse_mode="HTML",
-        reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(btn("◀️ Orqaga", KOK))
+        reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(btn("◀️ Orqaga", NAV))
     )
 
 
@@ -1363,7 +1363,7 @@ async def mijoz_xarid_start(message: types.Message, state: FSMContext):
         "📞 <b>Mijoz telefon raqamini kiriting:</b>\n\n"
         "<i>Masalan: +998901234567 yoki 998901234567</i>",
         parse_mode="HTML",
-        reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(btn("◀️ Orqaga", KOK))
+        reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(btn("◀️ Orqaga", NAV))
     )
 
 
