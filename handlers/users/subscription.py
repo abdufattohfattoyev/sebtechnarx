@@ -1,13 +1,25 @@
 # utils/misc/subscription.py - MAJBURIY OBUNA TIZIMI (TO'LIQ TUZATILGAN)
+import logging
+
 from aiogram import types
 from aiogram.types import InlineKeyboardMarkup
+from aiogram.utils.exceptions import (
+    BadRequest,
+    ChatNotFound,
+    Unauthorized,
+)
 from keyboards.uslub import ibtn, YASHIL, KOK
 from loader import bot
+
+logger = logging.getLogger(__name__)
 
 # ============= KANAL SOZLAMALARI =============
 CHANNEL_USERNAME = "@sebtech1"  # @ belgisi bilan
 CHANNEL_URL = "https://t.me/sebtech1"
 CHANNEL_ID = -1001913215598
+
+# Bot kanalda admin emasligi haqidagi ogohlantirish faqat bir marta yozilsin
+_admin_warning_shown = False
 
 
 # ============= OBUNA TEKSHIRISH =============
@@ -18,20 +30,32 @@ async def check_subscription(user_id: int) -> bool:
     Returns:
         True - obuna bo'lgan
         False - obuna emas
+
+    Eslatma: tekshirishning o'zi imkonsiz bo'lsa (bot kanalda admin emas,
+    kanal topilmadi, Telegram xatosi) - foydalanuvchini to'smaymiz, True.
     """
+    global _admin_warning_shown
+
     try:
         member = await bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
-
         # Status: creator, administrator, member - obuna
         # Status: left, kicked - obuna emas
-        if member.status in ['creator', 'administrator', 'member']:
-            return True
-        else:
-            return False
+        return member.status in ['creator', 'administrator', 'member']
+
+    except (ChatNotFound, Unauthorized, BadRequest) as e:
+        # Eng ko'p uchraydigani: "member list is inaccessible" -
+        # ya'ni bot {CHANNEL_USERNAME} kanalida admin emas.
+        if not _admin_warning_shown:
+            _admin_warning_shown = True
+            logger.warning(
+                f"⚠️ Obunani tekshirib bo'lmadi ({e}). "
+                f"Botni {CHANNEL_USERNAME} kanaliga ADMIN qilib qo'ying, "
+                f"aks holda majburiy obuna ishlamaydi (hamma o'tkaziladi)."
+            )
+        return True
 
     except Exception as e:
-        print(f"❌ Obuna tekshirishda xato: {e}")
-        # Xato bo'lsa, davom ettirish uchun True qaytarish
+        logger.error(f"❌ Obuna tekshirishda kutilmagan xato: {e}")
         return True
 
 
