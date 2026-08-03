@@ -22,8 +22,12 @@ API_BASE_URL  = env.str("API_BASE_URL",   "https://sebmarket.uz/api/payments")
 DJANGO_BASE_URL = env.str("DJANGO_BASE_URL", "http://127.0.0.1:8000")
 BOT_API_PORT    = env.int("BOT_API_PORT",    3002)
 
-# Bepul urinishlar soni (yangi foydalanuvchilarga)
-FREE_TRIALS_DEFAULT = 3
+# Bepul urinishlar soni (yangi foydalanuvchilarga).
+#
+# Bu son FAQAT yangi ro'yxatdan o'tganlarga ta'sir qiladi — allaqachon
+# ro'yxatdan o'tganlarning qolgan urinishlari o'zgarmaydi. Ularga ham
+# qo'shish kerak bo'lsa: admin panel → "🎁 Hamma uchun urinish".
+FREE_TRIALS_DEFAULT = 5
 
 # Bot
 BOT_USERNAME = "@Sebmarket_bot"

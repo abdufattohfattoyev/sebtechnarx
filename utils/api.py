@@ -179,6 +179,17 @@ class PaymentAPI:
         """
         Tariflarni olish
         GET /tariffs/
+
+        Tariflarning YAGONA manbai — Django bazasi (`payments/tariflar.py`).
+        Server javob bermasa, bot XATO qaytaradi.
+
+        NEGA ZAXIRA RO'YXAT YO'Q. Ilgari bu yerda qo'lda yozilgan tariflar
+        turardi va server javob bermaganda o'shalar ko'rsatilardi. Ularning
+        `id` lari bazadagi haqiqiy tariflarga mos kelmasdi: odam tarifni
+        tanlagach, to'lov yaratishda baribir "Tarif topilmadi" xatosiga
+        urilardi — faqat ikki qadam kechroq va endi noto'g'ri narxni ko'rib
+        bo'lgandan keyin. Yopiq eshikni ochiqdek ko'rsatgandan ko'ra,
+        yopiqligini darrov aytgan yaxshi.
         """
         logger.info("Getting tariffs")
 
@@ -187,39 +198,24 @@ class PaymentAPI:
         if result.get('success'):
             tariffs = result.get('tariffs', [])
             logger.info(f"Received {len(tariffs)} tariffs")
+            if not tariffs:
+                logger.error("API bo'sh tariflar ro'yxatini qaytardi")
+                return {
+                    'success': False,
+                    'error': "Tariflar sozlanmagan",
+                    'tariffs': []
+                }
             return {
                 'success': True,
                 'tariffs': tariffs
             }
-        else:
-            # Default tariflar
-            logger.warning("No tariffs from API, using defaults")
-            return {
-                'success': True,
-                'tariffs': [
-                    {
-                        'id': 1,
-                        'name': '1 ta narxlash',
-                        'count': 1,
-                        'price': 5000.0,
-                        'price_per_one': 5000.0
-                    },
-                    {
-                        'id': 2,
-                        'name': '5 ta narxlash',
-                        'count': 5,
-                        'price': 20000.0,
-                        'price_per_one': 4000.0
-                    },
-                    {
-                        'id': 3,
-                        'name': '10 ta narxlash',
-                        'count': 10,
-                        'price': 35000.0,
-                        'price_per_one': 3500.0
-                    }
-                ]
-            }
+
+        logger.error(f"Tariflarni olishda xato: {result.get('error')}")
+        return {
+            'success': False,
+            'error': result.get('error', 'Tariflarni olishda xato'),
+            'tariffs': []
+        }
 
     # ============= NARXLASH =============
 

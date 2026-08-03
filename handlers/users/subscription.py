@@ -1,6 +1,7 @@
 # utils/misc/subscription.py - MAJBURIY OBUNA TIZIMI (TO'LIQ TUZATILGAN)
 from aiogram import types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup
+from keyboards.uslub import ibtn, YASHIL, KOK
 from loader import bot
 
 # ============= KANAL SOZLAMALARI =============
@@ -38,18 +39,11 @@ async def check_subscription(user_id: int) -> bool:
 def subscription_keyboard() -> InlineKeyboardMarkup:
     """Obuna bo'lish tugmasi"""
     keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(
-        InlineKeyboardButton(
-            text="📢 Kanalga obuna bo'lish",
-            url=CHANNEL_URL
-        )
-    )
-    keyboard.add(
-        InlineKeyboardButton(
-            text="✅ Obuna bo'ldim, tekshiring",
-            callback_data="check_subscription"
-        )
-    )
+    # Birinchi qadam YASHIL: obuna bo'lmaguncha bot ochilmaydi.
+    keyboard.add(ibtn("📢 Kanalga obuna bo'lish", YASHIL, url=CHANNEL_URL))
+    # Ikkinchisi ko'k: u obunadan KEYIN bosiladi, avval emas.
+    keyboard.add(ibtn("✅ Obuna bo'ldim, tekshiring", KOK,
+                      callback_data="check_subscription"))
     return keyboard
 
 

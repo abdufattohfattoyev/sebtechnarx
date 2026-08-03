@@ -1,5 +1,18 @@
 # keyboards/default/knopkalar.py - AIOGRAM 2.25.2
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+#
+# Tugmalar RANGLI: `keyboards/uslub.py` dagi `btn` / `ibtn` har bir tugmaga
+# `style` maydonini qo'shadi. Rang qoidasi bitta joyda turadi:
+#
+#   YASHIL — ekrandagi asosiy harakat (odam shu tugma uchun kelgan)
+#   KO'K   — yordamchi yo'l, navigatsiya, ro'yxat
+#   QIZIL  — bekor qilish, o'chirish, ortga qaytarib bo'lmaydigan tanlov
+#
+# Rang faqat ko'zni yo'naltiradi: eski Telegram mijozlarida tugma kulrang
+# chiqadi va matnning o'zi hamon hamma narsani aytib turishi kerak.
+
+from aiogram.types import ReplyKeyboardMarkup, InlineKeyboardMarkup, WebAppInfo
+
+from keyboards.uslub import btn, ibtn, YASHIL, KOK, QIZIL
 
 MINIAPP_URL = "https://seb-tech.uz/miniapp/"
 
@@ -9,38 +22,41 @@ MINIAPP_URL = "https://seb-tech.uz/miniapp/"
 def phone_request_kb():
     """Telefon raqam so'rash"""
     kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    kb.add(KeyboardButton("📱 Telefon raqamni yuborish", request_contact=True))
+    # YASHIL — bu ekrandagi YAGONA harakat, boshqa yo'l yo'q.
+    kb.add(btn("📱 Telefon raqamni yuborish", YASHIL, request_contact=True))
     return kb
 
 
 def main_menu(is_admin=False):
     """Asosiy menyu - ODDIY FOYDALANUVCHI"""
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb = ReplyKeyboardMarkup(resize_keyboard=True, is_persistent=True)
 
     # Mini App tugmasi — eng yuqorida
-    # kb.row(KeyboardButton("🌐 Mini App", web_app=WebAppInfo(url=MINIAPP_URL)))
+    # kb.row(btn("🌐 Mini App", YASHIL, web_app=WebAppInfo(url=MINIAPP_URL)))
 
-    # Birinchi qator - Asosiy funksiyalar
-    kb.row(KeyboardButton("📱 Telefon narxlash"))
+    # Birinchi qator - botning asosiy ishi. Butun kenglikda va YASHIL:
+    # foydalanuvchilarning aksariyati aynan shu tugma uchun keladi va uni
+    # menyudagi qolgan hamma narsadan oldin ko'rishi kerak.
+    kb.row(btn("📱 Telefon narxlash", YASHIL))
 
-    # Ikkinchi qator - To'lov va Hisob
+    # Ikkinchi qator - To'lov va Hisob (yordamchi yo'llar)
     kb.row(
-        KeyboardButton("💰 Hisobni to'ldirish"),
-        KeyboardButton("👤 Mening hisobim")
+        btn("💰 Hisobni to'ldirish", KOK),
+        btn("👤 Mening hisobim", KOK),
     )
 
     # Uchinchi qator - Xaridlar va kafolat
     # kb.row(
-    #     KeyboardButton("🛍 Mening xaridlarim"),
-    #     KeyboardButton("🛡 Kafolat"),
+    #     btn("🛍 Mening xaridlarim", KOK),
+    #     btn("🛡 Kafolat", KOK),
     # )
 
     # To'rtinchi qator - Qo'shimcha
-    kb.row(KeyboardButton("ℹ️ Biz haqimizda"))
+    kb.row(btn("ℹ️ Biz haqimizda", KOK))
 
     # Admin uchun alohida panel
     if is_admin:
-        kb.row(KeyboardButton("🔧 Admin panel"))
+        kb.row(btn("🔧 Admin panel", KOK))
 
     return kb
 
@@ -48,14 +64,14 @@ def main_menu(is_admin=False):
 def back_kb():
     """Orqaga va Bosh menyu"""
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
+    kb.row(btn("◀️ Orqaga", KOK), btn("🏠 Bosh menyu", KOK))
     return kb
 
 
 def cancel_kb():
     """Bekor qilish"""
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add(KeyboardButton("❌ Bekor qilish"))
+    kb.add(btn("❌ Bekor qilish", QIZIL))
     return kb
 
 
@@ -64,21 +80,18 @@ def cancel_kb():
 def balance_menu_kb():
     """Balans menu"""
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add(KeyboardButton("💰 Hisobni to'ldirish"))
-    kb.add(KeyboardButton("◀️ Orqaga"))
+    kb.add(btn("💰 Hisobni to'ldirish", YASHIL))
+    kb.add(btn("◀️ Orqaga", KOK))
     return kb
 
 
-def payment_menu_kb():
-    """To'lov tariflari"""
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    kb.add(
-        KeyboardButton("1️⃣ 1 marta - 5,000 so'm"),
-        KeyboardButton("5️⃣ 5 marta - 20,000 so'm")
-    )
-    kb.add(KeyboardButton("🔟 10 marta - 35,000 so'm"))
-    kb.add(KeyboardButton("◀️ Orqaga"))
-    return kb
+# `payment_menu_kb()` OLIB TASHLANDI.
+#
+# U tariflarni QO'LDA yozib qo'yardi ("1 marta - 5,000 so'm") va hech qayerdan
+# chaqirilmasdi — ya'ni bazadagi haqiqiy narxlar o'zgarganda ham eski narxni
+# ko'rsatib turaverardi. Tariflar endi FAQAT bitta manbadan keladi:
+# Django `/api/payments/tariffs/` → `create_tariffs_inline_keyboard()`.
+# Narxni o'zgartirish uchun `payments/tariflar.py` tahrirlanadi.
 
 
 def payment_check_inline_kb(payment_url):
@@ -89,15 +102,9 @@ def payment_check_inline_kb(payment_url):
         payment_url (str): Payme to'lov havolasi
     """
     markup = InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        InlineKeyboardButton("💳 To'lov qilish", url=payment_url)
-    )
-    markup.add(
-        InlineKeyboardButton("🔄 To'lovni tekshirish", callback_data="check_payment")
-    )
-    markup.add(
-        InlineKeyboardButton("❌ Bekor qilish", callback_data="cancel_payment")
-    )
+    markup.add(ibtn("💳 To'lov qilish", YASHIL, url=payment_url))
+    markup.add(ibtn("🔄 To'lovni tekshirish", KOK, callback_data="check_payment"))
+    markup.add(ibtn("❌ Bekor qilish", QIZIL, callback_data="cancel_payment"))
     return markup
 
 
@@ -115,17 +122,18 @@ def create_keyboard(items, row_width=2, back=True, main_menu=True):
     """
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
 
-    # Asosiy tugmalar
+    # Asosiy tugmalar — model, xotira, holat kabi TANLOVLAR. Hammasi KO'K:
+    # ular teng variantlar, orasidan bittasini rang bilan ajratib bo'lmaydi.
     for i in range(0, len(items), row_width):
         row_items = items[i:i + row_width]
-        kb.row(*[KeyboardButton(item) for item in row_items])
+        kb.row(*[btn(str(item), KOK) for item in row_items])
 
     # Qo'shimcha tugmalar
     extra_buttons = []
     if back:
-        extra_buttons.append(KeyboardButton("◀️ Orqaga"))
+        extra_buttons.append(btn("◀️ Orqaga", KOK))
     if main_menu:
-        extra_buttons.append(KeyboardButton("🏠 Bosh menyu"))
+        extra_buttons.append(btn("🏠 Bosh menyu", KOK))
 
     if extra_buttons:
         kb.row(*extra_buttons)
@@ -136,8 +144,8 @@ def create_keyboard(items, row_width=2, back=True, main_menu=True):
 def parts_choice_kb():
     """Almashgan qism bormi/yo'q"""
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.row(KeyboardButton("✅ Ha"), KeyboardButton("❌ Yo'q"))
-    kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
+    kb.row(btn("✅ Ha", YASHIL), btn("❌ Yo'q", QIZIL))
+    kb.row(btn("◀️ Orqaga", KOK), btn("🏠 Bosh menyu", KOK))
     return kb
 
 
@@ -146,14 +154,16 @@ def create_parts_inline_kb(selected_parts, parts_dict):
     markup = InlineKeyboardMarkup(row_width=2)
 
     for key, name in parts_dict.items():
-        text = f"{'✅' if key in selected_parts else '☐'} {name}"
-        markup.insert(InlineKeyboardButton(text, callback_data=f"part_{key}"))
+        tanlangan = key in selected_parts
+        text = f"{'✅' if tanlangan else '☐'} {name}"
+        # Tanlangan qism YASHIL — belgidan tashqari rang ham ko'rsatib
+        # tursa, ro'yxatdan ko'z bilan o'tish osonlashadi.
+        markup.insert(ibtn(text, YASHIL if tanlangan else KOK,
+                           callback_data=f"part_{key}"))
 
     markup.row(
-        InlineKeyboardButton(
-            f"✅ Davom etish ({len(selected_parts)}/3)",
-            callback_data="part_done"
-        )
+        ibtn(f"✅ Davom etish ({len(selected_parts)}/3)", YASHIL,
+             callback_data="part_done")
     )
 
     return markup
@@ -165,34 +175,13 @@ def create_parts_inline_kb(selected_parts, parts_dict):
 #     """Qayerdan keldi — inline"""
 #     kb = InlineKeyboardMarkup(row_width=2)
 #     kb.add(
-#         InlineKeyboardButton("📱 Telegram",          callback_data="src_telegram"),
-#         InlineKeyboardButton("📸 Instagram",         callback_data="src_instagram"),
-#         InlineKeyboardButton("🤝 Do'st taklifi",     callback_data="src_referral"),
-#         InlineKeyboardButton("🚶 O'zi keldi",        callback_data="src_walkin"),
-#         InlineKeyboardButton("🔄 Avval ham kelgan",  callback_data="src_repeat"),
-#         InlineKeyboardButton("🔹 Boshqa",            callback_data="src_other"),
+#         ibtn("📱 Telegram",          KOK, callback_data="src_telegram"),
+#         ibtn("📸 Instagram",         KOK, callback_data="src_instagram"),
+#         ibtn("🤝 Do'st taklifi",     KOK, callback_data="src_referral"),
+#         ibtn("🚶 O'zi keldi",        KOK, callback_data="src_walkin"),
+#         ibtn("🔄 Avval ham kelgan",  KOK, callback_data="src_repeat"),
+#         ibtn("🔹 Boshqa",            KOK, callback_data="src_other"),
 #     )
-#     return kb
-
-
-# ================ BAHOLASH KLAVIATURASI ================
-
-# def rating_inline_kb(sale_id: int):
-#     """Sotuvchini baholash — 5 yulduz inline"""
-#     kb = InlineKeyboardMarkup(row_width=5)
-#     stars = ["⭐", "⭐⭐", "⭐⭐⭐", "⭐⭐⭐⭐", "⭐⭐⭐⭐⭐"]
-#     kb.row(*[
-#         InlineKeyboardButton(stars[i], callback_data=f"rate_{i+1}_{sale_id}")
-#         for i in range(5)
-#     ])
-#     kb.row(InlineKeyboardButton("⏭ O'tkazib yuborish", callback_data=f"rate_skip_{sale_id}"))
-#     return kb
-
-
-# def rating_comment_skip_kb(sale_id: int):
-#     """Izoh yoki o'tkazib yuborish"""
-#     kb = InlineKeyboardMarkup()
-#     kb.add(InlineKeyboardButton("⏭ Izoхsiz yuborish", callback_data=f"rate_nocomment_{sale_id}"))
 #     return kb
 
 
@@ -201,14 +190,11 @@ def create_parts_inline_kb(selected_parts, parts_dict):
 # def rating_inline_kb(sale_id: int):
 #     """Sotuvchini baholash — 1 dan 5 gacha raqamlar"""
 #     kb = InlineKeyboardMarkup(row_width=5)
-#     kb.row(
-#         InlineKeyboardButton("1", callback_data=f"rate_1_{sale_id}"),
-#         InlineKeyboardButton("2", callback_data=f"rate_2_{sale_id}"),
-#         InlineKeyboardButton("3", callback_data=f"rate_3_{sale_id}"),
-#         InlineKeyboardButton("4", callback_data=f"rate_4_{sale_id}"),
-#         InlineKeyboardButton("5", callback_data=f"rate_5_{sale_id}"),
-#     )
-#     kb.row(InlineKeyboardButton("⏭ O'tkazib yuborish", callback_data=f"rate_skip_{sale_id}"))
+#     kb.row(*[
+#         ibtn(str(i), KOK, callback_data=f"rate_{i}_{sale_id}")
+#         for i in range(1, 6)
+#     ])
+#     kb.row(ibtn("⏭ O'tkazib yuborish", KOK, callback_data=f"rate_skip_{sale_id}"))
 #     return kb
 
 
@@ -227,50 +213,52 @@ def create_parts_inline_kb(selected_parts, parts_dict):
 #     """1-4 baho uchun sabab tanlash"""
 #     kb = InlineKeyboardMarkup(row_width=2)
 #     for key, label in RATING_REASONS.items():
-#         kb.insert(InlineKeyboardButton(label, callback_data=f"rsn_{key}_{sale_id}_{rating}"))
+#         kb.insert(ibtn(label, KOK, callback_data=f"rsn_{key}_{sale_id}_{rating}"))
 #     return kb
 
 
 # ================ ADMIN KLAVIATURALARI ================
 
 def admin_kb():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb = ReplyKeyboardMarkup(resize_keyboard=True, is_persistent=True)
 
     # Birinchi qator - Statistika va Ma'lumotlar
     kb.row(
-        KeyboardButton("📊 Statistika"),
-        KeyboardButton("💳 Tariflar")
+        btn("📊 Statistika", KOK),
+        btn("💳 Tariflar", KOK),
     )
 
     # Ikkinchi qator - Import va Export
     kb.row(
-        KeyboardButton("📥 Narxlarni import qilish"),
-        KeyboardButton("📢 Reklama")
+        btn("📥 Narxlarni import qilish", KOK),
+        btn("📢 Reklama", KOK),
     )
 
     # Uchinchi qator - Foydalanuvchi boshqaruvi
     kb.row(
-        KeyboardButton("👤 Foydalanuvchi"),
-        KeyboardButton("🛍 Mijoz xaridlari")
+        btn("👤 Foydalanuvchi", KOK),
+        btn("🛍 Mijoz xaridlari", KOK),
     )
 
-    # To'rtinchi qator - Qo'shimcha funksiyalar
+    # To'rtinchi qator - Qo'shimcha funksiyalar.
+    # "Narxlarni tozalash" QIZIL: u butun bazani o'chiradi va qo'shni
+    # tugmalar bilan bir xil ko'rinsa, bexosdan bosilishi hech gap emas.
     kb.row(
-        KeyboardButton("📱 Namuna"),
-        KeyboardButton("🗑 Narxlarni tozalash")
+        btn("📱 Namuna", KOK),
+        btn("🗑 Narxlarni tozalash", QIZIL),
     )
 
     # Beshinchi qator - Rejimlar
     kb.row(
-        KeyboardButton("🔧 Tamirlash rejimi"),
-        KeyboardButton("🆓 Bepul/Pullik rejim")
+        btn("🔧 Tamirlash rejimi", KOK),
+        btn("🆓 Bepul/Pullik rejim", KOK),
     )
 
     # Oltinchi qator - Hamma uchun urinish
-    kb.row(KeyboardButton("🎁 Hamma uchun urinish"))
+    kb.row(btn("🎁 Hamma uchun urinish", KOK))
 
     # Yettinchi qator - Orqaga
-    kb.row(KeyboardButton("🏠 Bosh menyu"))
+    kb.row(btn("🏠 Bosh menyu", KOK))
 
     return kb
 
@@ -279,22 +267,23 @@ def maintenance_kb():
     """Tamirlash rejimi menu"""
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
 
-    # Birinchi qator - Asosiy boshqaruv
-    kb.row(KeyboardButton("🔴 Barchasini yopish"))
-    kb.row(KeyboardButton("🟢 Barchasini ochish"))
+    # Birinchi qator - Asosiy boshqaruv. Ranglar tugmaning o'z belgisiga
+    # mos: yopish — qizil, ochish — yashil.
+    kb.row(btn("🔴 Barchasini yopish", QIZIL))
+    kb.row(btn("🟢 Barchasini ochish", YASHIL))
 
     # Ikkinchi qator - Bo'limlar
     kb.row(
-        KeyboardButton("📱 Narxlash"),
-        KeyboardButton("💰 To'lov")
+        btn("📱 Narxlash", KOK),
+        btn("💰 To'lov", KOK),
     )
     kb.row(
-        KeyboardButton("👤 Hisob"),
-        KeyboardButton("📊 Holat")
+        btn("👤 Hisob", KOK),
+        btn("📊 Holat", KOK),
     )
 
     # Uchinchi qator - Orqaga
-    kb.row(KeyboardButton("◀️ Orqaga"))
+    kb.row(btn("◀️ Orqaga", KOK))
 
     return kb
 
@@ -302,9 +291,11 @@ def maintenance_kb():
 def cleanup_confirm_kb():
     """Bazani tozalash tasdiqlash"""
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    # Tasdiq ham QIZIL: bu yerda "ha" — qaytarib bo'lmaydigan tanlov,
+    # yashil rang esa uni xavfsizdek ko'rsatib qo'yardi.
     kb.row(
-        KeyboardButton("✅ Ha, tozalash"),
-        KeyboardButton("❌ Yo'q, bekor qilish")
+        btn("✅ Ha, tozalash", QIZIL),
+        btn("❌ Yo'q, bekor qilish", KOK),
     )
-    kb.row(KeyboardButton("🏠 Bosh menyu"))
+    kb.row(btn("🏠 Bosh menyu", KOK))
     return kb

@@ -7,6 +7,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from aiogram import types
+from aiogram.types import ReplyKeyboardMarkup, InlineKeyboardMarkup
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.utils.exceptions import MessageNotModified
@@ -22,6 +23,7 @@ from keyboards.inline.payment_keyboards import (
     create_tariffs_inline_keyboard,
     create_payment_inline_keyboard
 )
+from keyboards.uslub import btn, ibtn, YASHIL, KOK, QIZIL
 from data.config import ADMINS, FREE_TRIALS_DEFAULT
 from utils.misc.maintenance import get_maintenance_status, is_feature_enabled, is_free_mode
 
@@ -202,12 +204,29 @@ def sort_batteries_naturally(batteries):
     return sorted(batteries, key=lambda x: extract_percent(x['label']), reverse=True)
 
 
+#: Raqam emojilari — tarif ro'yxatida sonni ko'zga tashlanadigan qilish uchun.
+_RAQAM_EMOJI = ["0️⃣", "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+
+
+def tarif_emoji(count: int) -> str:
+    """
+    Tarifdagi narxlashlar soni uchun emoji.
+
+    Ilgari bu yerda `1 -> 1️⃣, 5 -> 5️⃣, qolgani -> 🔟` degan qo'lda yozilgan
+    shart turardi. Tariflar 2/3/4 ta bo'lganda uchalasi ham "🔟" ko'rsatardi,
+    ya'ni ro'yxat "10, 10, 10" bo'lib chiqardi. Endi son o'zidan kelib
+    chiqadi va tariflar qanday o'zgarsa ham to'g'ri qoladi.
+    """
+    if 0 <= count <= 10:
+        return _RAQAM_EMOJI[count]
+    return "💠"
+
+
 def parts_choice_kb():
     """Qismlar tanlash tugmalari"""
-    from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.row(KeyboardButton("✅ Ha"), KeyboardButton("❌ Yo'q"))
-    kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
+    kb.row(btn("✅ Ha", YASHIL), btn("❌ Yo'q", QIZIL))
+    kb.row(btn("◀️ Orqaga", KOK), btn("🏠 Bosh menyu", KOK))
     return kb
 
 
@@ -754,9 +773,10 @@ To'lov funksiyasi vaqtincha ishlamaydi.
     text = "💰 <b>Hisobni to'ldirish</b>\n\nTarifni tanlang:\n\n"
 
     for t in tariffs:
-        ppo = t['price'] / t['count']
-        emoji = '1️⃣' if t['count'] == 1 else '5️⃣' if t['count'] == 5 else '🔟'
-        text += f"{emoji} <b>{t['name']}</b>\n   {t['price']:,.0f} so'm ({ppo:,.0f} so'm/ta)\n\n"
+        count = int(t.get('count') or 0)
+        # Nolga bo'linish: tarif noto'g'ri sozlangan bo'lsa ham bot yiqilmasin.
+        ppo = t['price'] / count if count else t['price']
+        text += f"{tarif_emoji(count)} <b>{t['name']}</b>\n   {t['price']:,.0f} so'm ({ppo:,.0f} so'm/ta)\n\n"
 
     text += "👇 Tarifni tanlang:"
 
@@ -918,15 +938,17 @@ Narxlash funksiyasi vaqtincha ishlamaydi.
 
     # Agar user bazada yo'q bo'lsa - /start bosishni talab qilish
     if local_check.get('reason') == 'User topilmadi':
-        text = """❌ <b>Siz hali ro'yxatdan o'tmagansiz!</b>
+        # f-prefiks SHART: usiz odam matnning o'rniga
+        # "{FREE_TRIALS_DEFAULT} ta bepul urinish" degan yozuvni ko'radi.
+        text = f"""❌ <b>Siz hali ro'yxatdan o'tmagansiz!</b>
 
 📝 Iltimos, botni ishga tushirish uchun /start bosing.
 
 🎁 Ro'yxatdan o'tganingizda <b>{FREE_TRIALS_DEFAULT} ta bepul urinish</b> olasiz!"""
 
-        from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
         kb = ReplyKeyboardMarkup(resize_keyboard=True)
-        kb.row(KeyboardButton("/start"))
+        # Ekrandagi yagona yo'l — shuning uchun YASHIL.
+        kb.row(btn("/start", YASHIL))
 
         await message.answer(text, reply_markup=kb, parse_mode="HTML")
         return
@@ -976,10 +998,10 @@ Narxlash funksiyasi vaqtincha ishlamaydi.
 
 💡 <b>Hisobni to'ldiring:</b>"""
 
-        from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
         kb = ReplyKeyboardMarkup(resize_keyboard=True)
-        kb.row(KeyboardButton("💰 Hisobni to'ldirish"))
-        kb.row(KeyboardButton("🏠 Bosh menyu"))
+        # Balans tugagan — davom etishning yagona yo'li hisobni to'ldirish.
+        kb.row(btn("💰 Hisobni to'ldirish", YASHIL))
+        kb.row(btn("🏠 Bosh menyu", KOK))
         await message.answer(text, reply_markup=kb, parse_mode="HTML")
         return
 
@@ -1145,18 +1167,16 @@ async def battery_selected(message: types.Message, state: FSMContext):
 
     if should_ask_sim_type(model_name):
         await state.update_data(sim_step_shown=True)
-        from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
         kb = ReplyKeyboardMarkup(resize_keyboard=True)
-        kb.row(KeyboardButton("📱 SIM karta"), KeyboardButton("📲 eSIM"))
-        kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
+        kb.row(btn("📱 SIM karta", KOK), btn("📲 eSIM", KOK))
+        kb.row(btn("◀️ Orqaga", KOK), btn("🏠 Bosh menyu", KOK))
         await message.answer("<b>📞 SIM:</b>", reply_markup=kb, parse_mode="HTML")
         await UserState.waiting_sim.set()
     else:
         await state.update_data(sim_step_shown=False)
-        from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
         kb = ReplyKeyboardMarkup(resize_keyboard=True)
-        kb.row(KeyboardButton("✅ Bor"), KeyboardButton("❌ Yo'q"))
-        kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
+        kb.row(btn("✅ Bor", YASHIL), btn("❌ Yo'q", QIZIL))
+        kb.row(btn("◀️ Orqaga", KOK), btn("🏠 Bosh menyu", KOK))
         await message.answer("<b>📦 Quti:</b>", reply_markup=kb, parse_mode="HTML")
         await UserState.waiting_box.set()
         await state.update_data(sim_type="physical")
@@ -1181,10 +1201,9 @@ async def sim_selected(message: types.Message, state: FSMContext):
     sim_type = "esim" if "eSIM" in message.text else "physical"
     await state.update_data(sim_type=sim_type)
 
-    from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.row(KeyboardButton("✅ Bor"), KeyboardButton("❌ Yo'q"))
-    kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
+    kb.row(btn("✅ Bor", YASHIL), btn("❌ Yo'q", QIZIL))
+    kb.row(btn("◀️ Orqaga", KOK), btn("🏠 Bosh menyu", KOK))
     await message.answer("<b>📦 Quti:</b>", reply_markup=kb, parse_mode="HTML")
     await UserState.waiting_box.set()
 
@@ -1202,10 +1221,9 @@ async def box_selected(message: types.Message, state: FSMContext):
         model_name = data.get('model_name', '')
 
         if data.get('sim_step_shown'):
-            from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
             kb = ReplyKeyboardMarkup(resize_keyboard=True)
-            kb.row(KeyboardButton("📱 SIM karta"), KeyboardButton("📲 eSIM"))
-            kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
+            kb.row(btn("📱 SIM karta", KOK), btn("📲 eSIM", KOK))
+            kb.row(btn("◀️ Orqaga", KOK), btn("🏠 Bosh menyu", KOK))
             await message.answer("<b>📞 SIM:</b>", reply_markup=kb, parse_mode="HTML")
             await UserState.waiting_sim.set()
             return
@@ -1224,10 +1242,9 @@ async def box_selected(message: types.Message, state: FSMContext):
         return
 
     if message.text not in ["✅ Bor", "❌ Yo'q"]:
-        from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
         kb = ReplyKeyboardMarkup(resize_keyboard=True)
-        kb.row(KeyboardButton("✅ Bor"), KeyboardButton("❌ Yo'q"))
-        kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
+        kb.row(btn("✅ Bor", YASHIL), btn("❌ Yo'q", QIZIL))
+        kb.row(btn("◀️ Orqaga", KOK), btn("🏠 Bosh menyu", KOK))
         await message.answer("❌ Tugmalardan tanlang:", reply_markup=kb)
         return
 
@@ -1251,10 +1268,9 @@ async def parts_choice_selected(message: types.Message, state: FSMContext):
             await state.finish()
             await message.answer("🏠 Bosh menyu", reply_markup=main_menu(message.from_user.id in ADMINS))
         else:
-            from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
             kb = ReplyKeyboardMarkup(resize_keyboard=True)
-            kb.row(KeyboardButton("✅ Bor"), KeyboardButton("❌ Yo'q"))
-            kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
+            kb.row(btn("✅ Bor", YASHIL), btn("❌ Yo'q", QIZIL))
+            kb.row(btn("◀️ Orqaga", KOK), btn("🏠 Bosh menyu", KOK))
             await message.answer("<b>📦 Quti:</b>", reply_markup=kb, parse_mode="HTML")
             await UserState.waiting_box.set()
         return
@@ -1268,9 +1284,8 @@ async def parts_choice_selected(message: types.Message, state: FSMContext):
         await state.update_data(selected_parts=[])
         markup = create_parts_inline_kb([], PARTS)
 
-        from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
         kb = ReplyKeyboardMarkup(resize_keyboard=True)
-        kb.row(KeyboardButton("◀️ Orqaga"), KeyboardButton("🏠 Bosh menyu"))
+        kb.row(btn("◀️ Orqaga", KOK), btn("🏠 Bosh menyu", KOK))
 
         await message.answer(
             "<b>🔧 Almashgan qismlar (maks 3 ta):</b>",
@@ -1469,9 +1484,8 @@ async def show_final_price_from_callback(call: types.CallbackQuery, state: FSMCo
 🕒 {now}
 """
 
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     inline_kb = InlineKeyboardMarkup()
-    inline_kb.add(InlineKeyboardButton("🔄 Qayta narxlash", callback_data="reprice"))
+    inline_kb.add(ibtn("🔄 Qayta narxlash", YASHIL, callback_data="reprice"))
 
     await call.message.answer(text, reply_markup=inline_kb, parse_mode="HTML")
     await call.message.answer("🏠 Bosh menyu", reply_markup=main_menu(call.from_user.id in ADMINS))
@@ -1589,9 +1603,8 @@ async def show_final_price(message: types.Message, state: FSMContext):
 🕒 {now}
 """
 
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     inline_kb = InlineKeyboardMarkup()
-    inline_kb.add(InlineKeyboardButton("🔄 Qayta narxlash", callback_data="reprice"))
+    inline_kb.add(ibtn("🔄 Qayta narxlash", YASHIL, callback_data="reprice"))
 
     await message.answer(text, reply_markup=inline_kb, parse_mode="HTML")
     await message.answer("🏠 Bosh menyu", reply_markup=main_menu(user_id in ADMINS))
@@ -1651,10 +1664,10 @@ async def reprice_callback(call: types.CallbackQuery, state: FSMContext):
             api_balance = 0
 
     if free_trials <= 0 and api_balance <= 0:
-        from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
         kb = ReplyKeyboardMarkup(resize_keyboard=True)
-        kb.row(KeyboardButton("💰 Hisobni to'ldirish"))
-        kb.row(KeyboardButton("🏠 Bosh menyu"))
+        # Balans tugagan — davom etishning yagona yo'li hisobni to'ldirish.
+        kb.row(btn("💰 Hisobni to'ldirish", YASHIL))
+        kb.row(btn("🏠 Bosh menyu", KOK))
         await call.message.answer(
             f"❌ <b>Balans yetarli emas!</b>\n\n🎁 <b>Bepul:</b> 0 ta\n💰 <b>Balans:</b> {api_balance} ta\n\n💡 <b>Hisobni to'ldiring:</b>",
             reply_markup=kb, parse_mode="HTML"

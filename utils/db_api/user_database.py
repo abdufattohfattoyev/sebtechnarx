@@ -141,6 +141,20 @@ def init_user_db():
             """)
         print("✅ USERS: source, referred_by ustunlari")
 
+        # ===================== BEPUL URINISHLAR SONI =====================
+        # `CREATE TABLE` dagi DEFAULT faqat jadval BIRINCHI marta
+        # yaratilganda yoziladi. Jadval allaqachon bor bo'lsa (ishlab
+        # turgan bot), `FREE_TRIALS_DEFAULT` o'zgargani ustunga yetib
+        # bormasdi va baza eski sonni saqlab turardi. Shuning uchun
+        # default har safar aniq qilib qo'yiladi.
+        #
+        # Bu MAVJUD foydalanuvchilarning qolgan urinishlarini o'zgartirmaydi
+        # — faqat bundan keyin qo'shiladiganlarga taalluqli.
+        cursor.execute(
+            f"ALTER TABLE users ALTER COLUMN free_trials_left SET DEFAULT {int(FREE_TRIALS_DEFAULT)}"
+        )
+        print(f"✅ USERS: bepul urinish default = {FREE_TRIALS_DEFAULT}")
+
         # ===================== SELLER_RATINGS JADVALI =====================
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS seller_ratings (

@@ -8,11 +8,12 @@ import pandas as pd
 from aiogram import types
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.types import InputFile, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InputFile, InlineKeyboardMarkup
 from aiogram.utils.exceptions import RetryAfter
 
 from loader import dp, bot
 from keyboards.default.knopkalar import admin_kb, cleanup_confirm_kb, maintenance_kb
+from keyboards.uslub import btn, ibtn, YASHIL, KOK, QIZIL
 from data.config import ADMINS
 
 # ============================================
@@ -671,18 +672,20 @@ async def cleanup_confirm(message: types.Message, state: FSMContext):
 # ============================================
 
 def _stats_keyboard():
+    # Hammasi KO'K: bu — ko'rish uchun ro'yxat, hech biri hech narsani
+    # o'zgartirmaydi, ya'ni birontasini ajratib ko'rsatishga asos yo'q.
     keyboard = InlineKeyboardMarkup(row_width=2)
     keyboard.add(
-        InlineKeyboardButton(text="🗄️ Database", callback_data="stats_database"),
-        InlineKeyboardButton(text="👥 Foydalanuvchilar", callback_data="stats_users")
+        ibtn("🗄️ Database", KOK, callback_data="stats_database"),
+        ibtn("👥 Foydalanuvchilar", KOK, callback_data="stats_users"),
     )
     keyboard.add(
-        InlineKeyboardButton(text="📊 To'liq", callback_data="stats_full"),
-        InlineKeyboardButton(text="📈 Batafsil", callback_data="stats_detailed")
+        ibtn("📊 To'liq", KOK, callback_data="stats_full"),
+        ibtn("📈 Batafsil", KOK, callback_data="stats_detailed"),
     )
     keyboard.add(
-        InlineKeyboardButton(text="📱 Bugungi top modeller", callback_data="stats_models_daily"),
-        InlineKeyboardButton(text="📅 Haftalik top modeller", callback_data="stats_models_weekly")
+        ibtn("📱 Bugungi top modeller", KOK, callback_data="stats_models_daily"),
+        ibtn("📅 Haftalik top modeller", KOK, callback_data="stats_models_weekly"),
     )
     return keyboard
 
@@ -1166,16 +1169,20 @@ def _user_info_text(user):
 
 def _user_action_kb(telegram_id, is_active):
     kb = InlineKeyboardMarkup(row_width=2)
+    # Qo'shish — yashil, ayirish — qizil: yonma-yon turgan ikki tugma
+    # matni bir xil ("Balans") va faqat belgi bilan farq qiladi, rang esa
+    # ularni bexosdan almashtirib bosishdan saqlaydi.
     kb.add(
-        InlineKeyboardButton("➕ Balans", callback_data=f"um_add_bal_{telegram_id}"),
-        InlineKeyboardButton("➖ Balans", callback_data=f"um_sub_bal_{telegram_id}"),
+        ibtn("➕ Balans", YASHIL, callback_data=f"um_add_bal_{telegram_id}"),
+        ibtn("➖ Balans", QIZIL, callback_data=f"um_sub_bal_{telegram_id}"),
     )
     kb.add(
-        InlineKeyboardButton("🎁 Bepul urinish", callback_data=f"um_trials_{telegram_id}"),
+        ibtn("🎁 Bepul urinish", YASHIL, callback_data=f"um_trials_{telegram_id}"),
     )
-    block_text = "✅ Blokdan chiqar" if not is_active else "🚫 Bloklash"
-    block_data = f"um_unblock_{telegram_id}" if not is_active else f"um_block_{telegram_id}"
-    kb.add(InlineKeyboardButton(block_text, callback_data=block_data))
+    if is_active:
+        kb.add(ibtn("🚫 Bloklash", QIZIL, callback_data=f"um_block_{telegram_id}"))
+    else:
+        kb.add(ibtn("✅ Blokdan chiqar", YASHIL, callback_data=f"um_unblock_{telegram_id}"))
     return kb
 
 
@@ -1188,7 +1195,7 @@ async def user_manage_handler(message: types.Message, state: FSMContext):
         "Telegram ID yoki telefon raqam yuboring:\n"
         "<i>Misol: 123456789 yoki +998901234567</i>",
         parse_mode="HTML",
-        reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add("◀️ Orqaga")
+        reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(btn("◀️ Orqaga", KOK))
     )
 
 
@@ -1307,9 +1314,9 @@ async def free_mode_toggle_handler(message: types.Message, state: FSMContext):
     toggle_text = "💰 Pullikka o'tkazish" if current else "🆓 Bepulga o'tkazish"
 
     kb = InlineKeyboardMarkup(row_width=1)
-    kb.add(
-        InlineKeyboardButton(toggle_text, callback_data="toggle_free_mode"),
-    )
+    # Rejim BARCHA foydalanuvchiga bir zumda ta'sir qiladi — shuning uchun
+    # qizil: bu tasodifan bosiladigan tugma bo'lmasligi kerak.
+    kb.add(ibtn(toggle_text, QIZIL, callback_data="toggle_free_mode"))
     await message.answer(
         f"⚙️ <b>Hozirgi rejim: {mode_text}</b>\n\n"
         f"{'🆓 Barcha foydalanuvchilar bepul narxlayapti.' if current else '💰 Foydalanuvchilar balans/bepul urinish ishlatmoqda.'}\n\n"
@@ -1329,7 +1336,7 @@ async def toggle_free_mode_callback(cb: types.CallbackQuery):
     mode_text = "🆓 Bepul rejim" if new_mode else "💰 Pullik rejim"
     toggle_text = "💰 Pullikka o'tkazish" if new_mode else "🆓 Bepulga o'tkazish"
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton(toggle_text, callback_data="toggle_free_mode"))
+    kb.add(ibtn(toggle_text, QIZIL, callback_data="toggle_free_mode"))
     await cb.message.edit_text(
         f"✅ <b>{result['message']}</b>\n\n"
         f"⚙️ <b>Hozirgi rejim: {mode_text}</b>\n\n"
@@ -1356,7 +1363,7 @@ async def mijoz_xarid_start(message: types.Message, state: FSMContext):
         "📞 <b>Mijoz telefon raqamini kiriting:</b>\n\n"
         "<i>Masalan: +998901234567 yoki 998901234567</i>",
         parse_mode="HTML",
-        reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add("◀️ Orqaga")
+        reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(btn("◀️ Orqaga", KOK))
     )
 
 
@@ -1509,8 +1516,10 @@ async def bulk_trials_handler(message: types.Message, state: FSMContext):
 
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(
-        InlineKeyboardButton("➕ Qo'shish (ustiga)", callback_data="bulk_trials_add"),
-        InlineKeyboardButton("🔄 O'rnatish (almashtirish)", callback_data="bulk_trials_set"),
+        # Qo'shish — mavjud sonning ustiga, zarari yo'q.
+        ibtn("➕ Qo'shish (ustiga)", YASHIL, callback_data="bulk_trials_add"),
+        # O'rnatish esa BARCHA foydalanuvchining sonini o'chirib yozadi.
+        ibtn("🔄 O'rnatish (almashtirish)", QIZIL, callback_data="bulk_trials_set"),
     )
     await message.answer(
         "🎁 <b>HAMMA FOYDALANUVCHILAR UCHUN BEPUL URINISH</b>\n\n"
@@ -1531,7 +1540,7 @@ async def bulk_trials_action(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.answer(
         f"Nechta bepul urinish {word}siz?\n<i>Raqam kiriting (masalan: 3)</i>",
         parse_mode="HTML",
-        reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add("❌ Bekor qilish")
+        reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(btn("❌ Bekor qilish", QIZIL))
     )
     await callback.answer()
 

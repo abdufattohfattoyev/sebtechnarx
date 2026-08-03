@@ -13,6 +13,7 @@ from aiogram.utils.exceptions import (
 )
 
 from data.config import ADMINS
+from keyboards.uslub import ibtn, YASHIL, KOK, QIZIL
 from loader import bot, dp
 from utils.db_api.user_database import get_all_users, get_all_users_count
 
@@ -380,7 +381,8 @@ async def handle_buttons_input(message: types.Message, state: FSMContext):
             url  = pieces[1].strip()
             if not url.startswith("http"):
                 raise ValueError
-            buttons.append(types.InlineKeyboardButton(text=text, url=url))
+            # Reklama tugmasi — xabardagi yagona harakat, shuning uchun yashil.
+            buttons.append(ibtn(text, YASHIL, url=url))
     except Exception:
         await message.reply(
             "❌ Format noto'g'ri. Qaytadan kiriting:\n"
@@ -470,12 +472,13 @@ async def stop_ad_handler(cb: types.CallbackQuery):
 # Klaviaturalar
 # ────────────────────────────────────────────
 def get_ad_type_keyboard():
+    # Reklama turlari — teng variantlar, hammasi KO'K.
     kb = types.InlineKeyboardMarkup(row_width=2)
     kb.add(
-        types.InlineKeyboardButton("✏️ Matnli",    callback_data="ad_type_text"),
-        types.InlineKeyboardButton("↪️ Forward",    callback_data="ad_type_forward"),
-        types.InlineKeyboardButton("🔘 Tugmali",    callback_data="ad_type_button"),
-        types.InlineKeyboardButton("📎 Har qanday", callback_data="ad_type_any"),
+        ibtn("✏️ Matnli",    KOK, callback_data="ad_type_text"),
+        ibtn("↪️ Forward",    KOK, callback_data="ad_type_forward"),
+        ibtn("🔘 Tugmali",    KOK, callback_data="ad_type_button"),
+        ibtn("📎 Har qanday", KOK, callback_data="ad_type_any"),
     )
     return kb
 
@@ -483,23 +486,25 @@ def get_ad_type_keyboard():
 def get_time_keyboard():
     kb = types.InlineKeyboardMarkup(row_width=2)
     kb.add(
-        types.InlineKeyboardButton("⚡ Hozir",    callback_data="send_now"),
-        types.InlineKeyboardButton("🕐 Keyinroq", callback_data="send_later"),
+        ibtn("⚡ Hozir",    KOK, callback_data="send_now"),
+        ibtn("🕐 Keyinroq", KOK, callback_data="send_later"),
     )
     return kb
 
 
 def get_cancel_keyboard():
     kb = types.InlineKeyboardMarkup()
-    kb.add(types.InlineKeyboardButton("❌ Bekor qilish", callback_data="cancel_ad"))
+    kb.add(ibtn("❌ Bekor qilish", QIZIL, callback_data="cancel_ad"))
     return kb
 
 
 def get_confirm_keyboard():
     kb = types.InlineKeyboardMarkup(row_width=2)
+    # "Yuborish" — minglab odamga ketadigan, qaytarib bo'lmaydigan qadam.
+    # Yashil emas, QIZIL: bu yerda shoshilib bosish eng qimmat xato.
     kb.add(
-        types.InlineKeyboardButton("✅ Yuborish",     callback_data="confirm_ad"),
-        types.InlineKeyboardButton("❌ Bekor qilish", callback_data="cancel_ad"),
+        ibtn("✅ Yuborish",     QIZIL, callback_data="confirm_ad"),
+        ibtn("❌ Bekor qilish", KOK,   callback_data="cancel_ad"),
     )
     return kb
 
@@ -507,8 +512,9 @@ def get_confirm_keyboard():
 def get_status_keyboard(ad_id: int, paused: bool = False):
     kb = types.InlineKeyboardMarkup(row_width=2)
     if paused:
-        kb.add(types.InlineKeyboardButton("▶️ Davom ettirish", callback_data=f"resume_ad_{ad_id}"))
+        kb.add(ibtn("▶️ Davom ettirish", YASHIL, callback_data=f"resume_ad_{ad_id}"))
     else:
-        kb.add(types.InlineKeyboardButton("⏸ Pauza",           callback_data=f"pause_ad_{ad_id}"))
-    kb.add(types.InlineKeyboardButton("⛔ To'xtatish",          callback_data=f"stop_ad_{ad_id}"))
+        kb.add(ibtn("⏸ Pauza", KOK, callback_data=f"pause_ad_{ad_id}"))
+    # To'xtatilgan reklamani qayta boshlab bo'lmaydi — shuning uchun qizil.
+    kb.add(ibtn("⛔ To'xtatish", QIZIL, callback_data=f"stop_ad_{ad_id}"))
     return kb
