@@ -1,0 +1,45 @@
+# .dockerignore — IMAGE ICHIGA NIMA TUSHMASLIGI KERAK
+#
+# `Dockerfile` da `COPY . /app/` turadi: papkadagi hamma narsa image
+# ichiga ko'chiriladi va `.gitignore` bunga to'sqinlik qilmaydi — Docker
+# git haqida bilmaydi.
+#
+# Botning bazasi PostgreSQL'da (nomli volume'da), shuning uchun bu yerda
+# ma'lumot yo'qotish xavfi yo'q. Lekin `venv/`, `.git/`, log fayllar va
+# loyihaning ichiga tushib qolgan nusxa papkalar image'ni bir necha yuz
+# megabaytga shishirib, har bir qurishni sekinlashtiradi.
+
+# ── Nusxa papkalar (loyiha ichiga tasodifan tushgan) ──
+sebtechnarx/
+
+# ── Git ──
+.git/
+.gitignore
+.dockerignore
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+env/
+
+# ── Ishlash paytida paydo bo'ladiganlar ──
+logs/
+*.log
+temp/
+backups/
+
+# ── Muharrir va OS ──
+*~
+.idea/
+.vscode/
+.DS_Store
+
+# ── Sozlama ──
+# `.env` compose'ning `env_file` i orqali beriladi; image ichida saqlansa,
+# bot tokeni image bilan birga tarqalardi.
+.env
+.env.*
+.claude/
