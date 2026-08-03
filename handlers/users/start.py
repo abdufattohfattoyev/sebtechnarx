@@ -186,13 +186,18 @@ def sort_models_naturally(models):
 
 
 def sort_storages_naturally(storages):
-    """Xotiralarni tartibga solish"""
+    """Xotiralarni kichikdan kattaga tartibga solish (64 GB ko'rsatilmaydi)"""
 
     def extract_size(s):
         match = re.search(r'(\d+)', s)
-        return int(match.group(1)) if match else 0
+        size = int(match.group(1)) if match else 0
+        # TB -> GB
+        if size and 'tb' in s.lower():
+            size *= 1024
+        return size
 
-    return sorted(storages, key=lambda x: extract_size(x['size']), reverse=True)
+    visible = [x for x in storages if extract_size(x['size']) != 64]
+    return sorted(visible, key=lambda x: extract_size(x['size']))
 
 
 def sort_batteries_naturally(batteries):
@@ -1076,6 +1081,12 @@ async def storage_selected(message: types.Message, state: FSMContext):
             kb = create_keyboard([m['name'] for m in sorted_models], row_width=2)
             await message.answer("<b>📱 Model:</b>", reply_markup=kb, parse_mode="HTML")
             await UserState.waiting_model.set()
+        return
+
+    sorted_storages = sort_storages_naturally(get_storages(data['model_id']) or [])
+    if message.text not in [s['size'] for s in sorted_storages]:
+        kb = create_keyboard([s['size'] for s in sorted_storages], row_width=2)
+        await message.answer("❌ Bunday xotira yo'q. Quyidagilardan tanlang:", reply_markup=kb)
         return
 
     await state.update_data(storage=message.text)
