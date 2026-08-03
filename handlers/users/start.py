@@ -21,7 +21,8 @@ from keyboards.default.knopkalar import (
 )
 from keyboards.inline.payment_keyboards import (
     create_tariffs_inline_keyboard,
-    create_payment_inline_keyboard
+    create_payment_inline_keyboard,
+    tarif_satri
 )
 from keyboards.uslub import btn, ibtn, YASHIL, KOK, QIZIL
 from data.config import ADMINS, FREE_TRIALS_DEFAULT
@@ -202,24 +203,6 @@ def sort_batteries_naturally(batteries):
         return int(match.group(1)) if match else 0
 
     return sorted(batteries, key=lambda x: extract_percent(x['label']), reverse=True)
-
-
-#: Raqam emojilari — tarif ro'yxatida sonni ko'zga tashlanadigan qilish uchun.
-_RAQAM_EMOJI = ["0️⃣", "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
-
-
-def tarif_emoji(count: int) -> str:
-    """
-    Tarifdagi narxlashlar soni uchun emoji.
-
-    Ilgari bu yerda `1 -> 1️⃣, 5 -> 5️⃣, qolgani -> 🔟` degan qo'lda yozilgan
-    shart turardi. Tariflar 2/3/4 ta bo'lganda uchalasi ham "🔟" ko'rsatardi,
-    ya'ni ro'yxat "10, 10, 10" bo'lib chiqardi. Endi son o'zidan kelib
-    chiqadi va tariflar qanday o'zgarsa ham to'g'ri qoladi.
-    """
-    if 0 <= count <= 10:
-        return _RAQAM_EMOJI[count]
-    return "💠"
 
 
 def parts_choice_kb():
@@ -776,7 +759,10 @@ To'lov funksiyasi vaqtincha ishlamaydi.
         count = int(t.get('count') or 0)
         # Nolga bo'linish: tarif noto'g'ri sozlangan bo'lsa ham bot yiqilmasin.
         ppo = t['price'] / count if count else t['price']
-        text += f"{tarif_emoji(count)} <b>{t['name']}</b>\n   {t['price']:,.0f} so'm ({ppo:,.0f} so'm/ta)\n\n"
+        # Matn va tugma AYNAN bir xil yozilishi kerak — `tarif_satri()` ga
+        # qarang. Odam ro'yxatni o'qib, pastdagi tugmani izlaydi; ikkisi
+        # boshqacha ko'rinsa, u har safar solishtirishga majbur bo'ladi.
+        text += f"{tarif_satri(t)}\n   ({ppo:,.0f} so'm/ta)\n\n"
 
     text += "👇 Tarifni tanlang:"
 
@@ -893,7 +879,11 @@ async def cancel_payment_callback(callback: types.CallbackQuery, state: FSMConte
 
 
 # ================ PRICING HANDLERS (⭐ MAJBURIY OBUNA BILAN) ================
-@dp.message_handler(lambda m: m.text in ["📱 Telefon narxlash", "🔄 Yana hisoblash"], state='*')
+# "🔄 Qayta narxlash" — inline tugmadagi bilan AYNAN bir xil yozilishi kerak.
+# Ilgari bu yerda "🔄 Yana hisoblash" turardi: bir xil amal ikki xil nomlangan,
+# ustiga-ustak o'sha matnli tugmani hech qaysi klaviatura yaratmasdi — ya'ni
+# shart hech qachon bajarilmasdi.
+@dp.message_handler(lambda m: m.text in ["📱 Telefon narxlash", "🔄 Qayta narxlash"], state='*')
 async def choose_model(message: types.Message, state: FSMContext):
     """Model tanlash - MAJBURIY OBUNA BILAN"""
     await state.finish()

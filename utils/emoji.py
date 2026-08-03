@@ -66,7 +66,52 @@ CUSTOM_EMOJI = {
     "🌍": "5399898266265475100",   # RestrictedEmoji
     "🔍": "5188217332748527444",   # RestrictedEmoji
     "⏳": "5451732530048802485",   # RestrictedEmoji
+
+    # ── Qo'shimcha: botning boshqa xabarlarida uchraydiganlar ──
+    "🛍": "5373052667671093676",   # RestrictedEmoji
+    "📥": "5433811242135331842",   # RestrictedEmoji
+    "📆": "5431897022456145283",   # RestrictedEmoji
+    "➕": "5226945370684140473",   # RestrictedEmoji
+    "➖": "5229113891081956317",   # RestrictedEmoji
+    "🚀": "5445284980978621387",   # RestrictedEmoji
+    "👋": "5472055112702629499",   # RestrictedEmoji
+    "🙏": "5472189549473963781",   # RestrictedEmoji
+    "💡": "5472146462362048818",   # RestrictedEmoji
+    "🤝": "5357080225463149588",   # RestrictedEmoji
+    "🥇": "5280735858926822987",   # RestrictedEmoji
+    "🥈": "5283195573812340110",   # RestrictedEmoji
+    "🥉": "5282750778409233531",   # RestrictedEmoji
+    "🔗": "5375129357373165375",   # RestrictedEmoji
+    "✏️": "5334673106202010226",   # RestrictedEmoji
+    "📎": "5377844313575150051",   # RestrictedEmoji
+    "✨": "5472164874886846699",   # RestrictedEmoji
+    "🔎": "5188311512791393083",   # RestrictedEmoji
+    "💼": "5359785904535774578",   # RestrictedEmoji
+    "👇": "5470177992950946662",   # RestrictedEmoji
+    "👑": "5467406098367521267",   # RestrictedEmoji
+    "💥": "5469785308386041323",   # RestrictedEmoji
+    "🔥": "5420315771991497307",   # RestrictedEmoji
+    "🔐": "5472308992514464048",   # RestrictedEmoji
+    "😤": "5370650883304462905",   # RestrictedEmoji
+    "🔴": "5411225014148014586",   # NewsEmoji
+    "🟢": "5416081784641168838",   # NewsEmoji
+    "🗑": "5445267414562389170",   # NewsEmoji
+    "📩": "5319185587276619437",   # Decoration_Pack2
+    "💵": "5409048419211682843",   # NewsEmoji
+    "ℹ️": "5334544901428229844",   # NewsEmoji
+    "🗓": "5413879192267805083",   # NewsEmoji
+    "🎧": "5316919120149619748",   # Decoration_Pack2
+    "📌": "5397782960512444700",   # NewsEmoji
 }
+
+# ATAYLAB QO'SHILMAGANLAR.
+#
+# 📦 🗄️ 🌐 — to'plamlarda bor, lekin mazmuni boshqa: 📦 o'rniga Amazon
+# logotipi, 🗄️ o'rniga "C" belgisi, 🌐 o'rniga ijtimoiy tarmoq
+# nishonlari. Noto'g'ri rasmdan ko'ra oddiy emoji yaxshi.
+#
+# 💳 🔧 📢 📅 1️⃣ 2️⃣ 3️⃣ va boshqa raqamli emojilar — sakkiz to'plamning
+# birortasida ham yo'q. Ular oddiy emoji bo'lib qolaveradi.
 
 # Uzunroq kalit birinchi: "ℹ️" (variatsiya belgisi bilan) "ℹ" dan oldin
 # tekshirilishi kerak, aks holda teg ichida ortiqcha belgi qolib ketardi.
@@ -80,7 +125,7 @@ _NAQSH = re.compile(
 #: belgiga uzaytiradi — uzun statistika xabari 4096 belgilik chegaradan
 #: oshib ketishi mumkin edi. Chegara ATAYLAB past: animatsion emoji ko'z
 #: tortish uchun, xabarni bezash uchun emas.
-STANDART_CHEGARA = 12
+STANDART_CHEGARA = 16
 
 #: Telegram xabar matnining chegarasi va bitta tegning taxminiy uzunligi.
 MAX_MATN = 4096
